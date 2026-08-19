@@ -820,6 +820,7 @@ function analyseTeam(tm){
    SECTION 5 : PIXEL RENDERER (top-down view of the whole loop)
    ================================================================ */
 const CW = 400, CH = 232;          // internal canvas resolution
+const RUNNER_SCALE = 2;            // runner sprites are 5x8 px, drawn at this scale
 const TRACK = {x:4, y:22, w:278, h:206};
 const PANEL = {x:288, y:22, w:108, h:206};
 
@@ -837,20 +838,21 @@ const textW = (s,sc)=>String(s).length*6*(sc||1);
 
 function drawRunnerSprite(ctx, x, y, frame, colour, halo){
   const px = SPRITES[frame & 3];
-  const bx = Math.round(x)-2, by = Math.round(y)-7;
+  const S = RUNNER_SCALE;
+  const bx = Math.round(x)-2*S, by = Math.round(y)-7*S;
   if(halo){
     ctx.fillStyle = halo;
     for(let i=0;i<px.length;i++){
-      const sx=bx+px[i][0], sy=by+px[i][1];
-      ctx.fillRect(sx-1,sy,1,1); ctx.fillRect(sx+1,sy,1,1);
-      ctx.fillRect(sx,sy-1,1,1); ctx.fillRect(sx,sy+1,1,1);
+      const sx=bx+px[i][0]*S, sy=by+px[i][1]*S;
+      ctx.fillRect(sx-S,sy,S,S); ctx.fillRect(sx+S,sy,S,S);
+      ctx.fillRect(sx,sy-S,S,S); ctx.fillRect(sx,sy+S,S,S);
     }
   }
-  ctx.fillStyle="#05070a"; ctx.fillRect(bx,by+7,4,1);       // shadow
+  ctx.fillStyle="#05070a"; ctx.fillRect(bx,by+7*S,4*S,S);   // shadow
   for(let i=0;i<px.length;i++){
     const c = px[i][2];
     ctx.fillStyle = c==="H" ? "#eccfa4" : (c==="B" ? colour : "#252b38");
-    ctx.fillRect(bx+px[i][0], by+px[i][1], 1, 1);
+    ctx.fillRect(bx+px[i][0]*S, by+px[i][1]*S, S, S);
   }
 }
 
@@ -897,14 +899,14 @@ function bakeCourse(course, view){
     const {p}=pos[i];
     const t=TERRAIN[pos[i].seg.terrain];
     c.fillStyle=t.edge;
-    c.fillRect(Math.round(p.x)-6, Math.round(p.y)-6, 13, 13);
+    c.fillRect(Math.round(p.x)-10, Math.round(p.y)-10, 21, 21);
   }
   // terrain surface pass
   for(let i=0;i<STEPS;i++){
     const {p,seg}=pos[i];
     const t=TERRAIN[seg.terrain];
     c.fillStyle=t.col;
-    c.fillRect(Math.round(p.x)-4, Math.round(p.y)-4, 9, 9);
+    c.fillRect(Math.round(p.x)-7, Math.round(p.y)-7, 15, 15);
   }
   // texture: mud splats, grass tufts, rocks, hill chevrons
   for(let i=0;i<STEPS;i+=3){
@@ -925,16 +927,16 @@ function bakeCourse(course, view){
     const a=course.posAt(f);
     const p=proj(view,a);
     const nx=Math.cos(a.ang+Math.PI/2), ny=Math.sin(a.ang+Math.PI/2);
-    const x=Math.round(p.x+nx*10), y=Math.round(p.y+ny*10);
+    const x=Math.round(p.x+nx*15), y=Math.round(p.y+ny*15);
     c.fillStyle="#8fa8c9";
     c.fillRect(x-2,y,5,1); c.fillRect(x+1,y-1,1,1); c.fillRect(x+1,y+1,1,1);
   }
   // start / finish line
   const sp = course.posAt(0), spp = proj(view,sp);
   const nx=Math.cos(sp.ang+Math.PI/2), ny=Math.sin(sp.ang+Math.PI/2);
-  for(let k=-5;k<=5;k++){
+  for(let k=-8;k<=8;k++){
     const x=Math.round(spp.x+nx*k), y=Math.round(spp.y+ny*k);
-    c.fillStyle = ((k+6)%2===0)?"#ffffff":"#1a1a1a";
+    c.fillStyle = ((k+9)%2===0)?"#ffffff":"#1a1a1a";
     c.fillRect(x-1,y-1,2,2);
   }
   return off;
@@ -1003,25 +1005,26 @@ const RaceView = {
       const p = proj(this.view, a);
       if(tm.done){
         // parked at the finish, waving
-        drawRunnerSprite(c, p.x+ (tm.place%2?6:-6), p.y+8, 0, tm.colour, null);
+        drawRunnerSprite(c, p.x+ (tm.place%2?10:-10), p.y+12, 0, tm.colour, null);
         return;
       }
       // fan the clubs out across the width of the track so a tight pack
       // reads as a pack instead of one sprite stacked on another
-      const lane = (R.teams.indexOf(tm) - (R.teams.length-1)/2) * 3.2;
+      const lane = (R.teams.indexOf(tm) - (R.teams.length-1)/2) * 3.4;
       p.x += Math.cos(a.ang+Math.PI/2)*lane;
       p.y += Math.sin(a.ang+Math.PI/2)*lane;
       const frame = ((tm.total/2.2)|0) & 3;
       drawRunnerSprite(c, p.x, p.y, frame, tm.colour, tm.isPlayer?"#ffffff":null);
       if(tm.isPlayer){
         c.fillStyle="#f5c542";
-        const ax=Math.round(p.x), ay=Math.round(p.y)-11;
-        c.fillRect(ax-2,ay,5,1); c.fillRect(ax-1,ay+1,3,1); c.fillRect(ax,ay+2,1,1);
+        const S=RUNNER_SCALE;
+        const ax=Math.round(p.x), ay=Math.round(p.y)-9*S;
+        c.fillRect(ax-2*S,ay,5*S,S); c.fillRect(ax-S,ay+S,3*S,S); c.fillRect(ax,ay+2*S,S,S);
       }
       // handover flash
       if(R.t-tm.handover < 2.5){
         c.fillStyle= (((R.t*6)|0)%2) ? "#ffffff" : tm.colour;
-        drawText(c,"GO!",Math.round(p.x)-8,Math.round(p.y)-22,c.fillStyle);
+        drawText(c,"GO!",Math.round(p.x)-8,Math.round(p.y)-13*RUNNER_SCALE,c.fillStyle);
       }
     });
 
