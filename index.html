@@ -152,6 +152,28 @@ canvas{
 .lossbar i.gain{background:var(--green)}
 .lossnum{width:56px;text-align:right;font-size:11px;color:var(--dim)}
 
+/* ---- season progress strip ---- */
+.sbwrap{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sbblocks{display:flex;gap:4px}
+.sb{
+  min-width:30px;height:26px;padding:0 3px;
+  border:2px solid var(--line2);background:var(--panel2);
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;color:var(--dim);letter-spacing:0;position:relative;
+}
+.sb.done{border-color:var(--line);color:var(--ink)}
+.sb.win{background:#12240f;border-color:var(--green);color:var(--green)}
+.sb.now{border-color:var(--gold);color:var(--gold);background:#241f0d}
+.sb.home::after{
+  content:"";position:absolute;left:2px;right:2px;bottom:-2px;height:3px;background:var(--gold);
+}
+.seasontitle{text-transform:uppercase;letter-spacing:1px;font-size:11px;color:var(--dim)}
+.seasontitle b{color:var(--gold)}
+.outlook{text-transform:uppercase;letter-spacing:1px;font-size:11px}
+.outlook.up{color:var(--green)}
+.outlook.down{color:var(--red)}
+.outlook.mid{color:var(--gold)}
+
 .terrainkey{display:flex;gap:8px;flex-wrap:wrap;font-size:10px;text-transform:uppercase;letter-spacing:1px}
 .terrainkey span{display:flex;align-items:center;gap:4px}
 .swatch{width:10px;height:10px;border:1px solid #000;display:inline-block}
@@ -185,6 +207,7 @@ footer{color:var(--dim);font-size:10px;text-align:center;padding:8px 0 20px;lett
   </div>
 
   <nav id="nav"></nav>
+  <div class="panel tight" id="seasonbar"></div>
   <div id="screen"></div>
 
   <footer>CROSS COUNTRY MANAGER &mdash; SAVES AUTOMATICALLY TO THIS BROWSER</footer>
@@ -1601,6 +1624,53 @@ function statCell(v){
   return `<span title="${v.toFixed(1)}">${pips(v)}</span> <span class="statval">${Math.round(v)}</span>`;
 }
 
+/* ---- where am I in the season, and what happens if it ends now? --- */
+function seasonStatus(){
+  const raced = state.fixtures.filter(f=>f.result).length;
+  return {raced, left: WEEKS_PER_SEASON - raced, pos: myTablePos()};
+}
+function outlook(){
+  const pos = myTablePos();
+  const top = state.tier >= TIERS.length-1;
+  if(pos===1) return top
+    ? {cls:"up",   text:"1st &mdash; champions of the sport"}
+    : {cls:"up",   text:`1st &mdash; promoted to the ${TIERS[state.tier+1].short} league if it ends now`};
+  if(pos===TEAMS_PER_LEAGUE && state.tier>0)
+    return {cls:"down", text:`Last &mdash; relegated to the ${TIERS[state.tier-1].short} league if it ends now`};
+  const lead = sortedTable()[0];
+  const me   = sortedTable().find(r=>r.club.id===state.club.id);
+  const gap  = lead.pts - me.pts;
+  return {cls:"mid", text:`${ordinal(pos)} &mdash; ${gap} point${gap===1?"":"s"} off top spot, and only 1st goes up`};
+}
+
+function renderSeasonBar(){
+  const el = document.getElementById("seasonbar");
+  if(state.screen==="season"){ el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  const s = seasonStatus(), o = outlook();
+  const blocks = state.fixtures.map(f=>{
+    const done = !!f.result;
+    const isNow = f.week===state.week && !done;
+    const cls = [ "sb", done?"done":"", (done&&f.result.place===1)?"win":"", isNow?"now":"", f.home?"home":"" ]
+                .filter(Boolean).join(" ");
+    const label = done ? ordinal(f.result.place) : (f.week+1);
+    const title = `Race ${f.week+1}: ${f.venue}${f.home?" (home)":""}`
+                + (done?` — finished ${ordinal(f.result.place)}`:"");
+    return `<span class="${cls}" title="${esc(title)}">${label}</span>`;
+  }).join("");
+
+  el.innerHTML = `
+    <div class="sbwrap">
+      <span class="seasontitle">Season <b>${state.season}</b></span>
+      <span class="sbblocks">${blocks}</span>
+      <span class="seasontitle">${
+        s.left>0 ? `Race <b>${s.raced+1}</b> of <b>${WEEKS_PER_SEASON}</b> &middot; <b>${s.left}</b> race${s.left===1?"":"s"} left this season`
+                 : `<b>Season over</b>`
+      }</span>
+      <span class="outlook ${o.cls}" style="margin-left:auto">${o.text}</span>
+    </div>`;
+}
+
 function renderTop(){
   document.getElementById("clubName").textContent = state.club.name.toUpperCase();
   document.getElementById("clubSub").textContent =
@@ -1608,7 +1678,7 @@ function renderTop(){
   const raced = state.week;
   document.getElementById("strip").innerHTML = `
     <span class="chip money">Cash <b>${money(state.money)}</b></span>
-    <span class="chip">Week <b>${Math.min(state.week+1,WEEKS_PER_SEASON)}/${WEEKS_PER_SEASON}</b></span>
+    <span class="chip">Race <b>${Math.min(state.week+1,WEEKS_PER_SEASON)} of ${WEEKS_PER_SEASON}</b></span>
     <span class="chip">Training <b>${state.slots}/${TRAINING_SLOTS}</b></span>
     <span class="chip">Position <b>${ordinal(myTablePos())}</b></span>
     <span class="chip">Squad AVG <b>${teamAverage().toFixed(1)}</b></span>`;
@@ -1806,6 +1876,12 @@ function screenLeague(){
       <h2>${esc(t.name)}</h2>
       <span class="chip">Season <b>${state.season}</b></span>
     </div>
+    <div class="banner ${outlook().cls==="up"?"good":(outlook().cls==="down"?"bad":"")}">
+      ${outlook().text}.
+      ${seasonStatus().left>0
+        ? `${seasonStatus().left} race${seasonStatus().left===1?"":"s"} still to run.`
+        : `The season is over.`}
+    </div>
     <p class="muted small">Points: ${POINTS.join(" / ")} by finishing position.
       Win the league and you are promoted next season with a bonus of ${money(LEAGUE_PRIZE[0]*t.prize)}.
       ${state.tier>0?"Finish last and you go down.":""}</p>
@@ -1860,7 +1936,9 @@ function screenRacePreview(){
       <h2>Race Day &mdash; ${esc(course.venue)}</h2>
       <div class="row">
         <span class="chip">${course.isHome?"<b>HOME</b>":"Away"}</span>
-        <span class="chip">Week <b>${state.week+1}/${WEEKS_PER_SEASON}</b></span>
+        <span class="chip">Race <b>${state.week+1} of ${WEEKS_PER_SEASON}</b></span>
+        ${state.week+1===WEEKS_PER_SEASON
+          ? '<span class="chip"><b class="blink">FINAL RACE OF THE SEASON</b></span>' : ""}
       </div>
     </div>
     <div id="raceWrap"><canvas id="preview"></canvas></div>
@@ -1973,7 +2051,19 @@ function screenResults(){
     <table><tr><th>Leg</th><th>Runner</th><th>Time</th><th>Stamina left</th><th>Biggest ground/fade loss</th></tr>${legs}</table>
   </div>
   <div class="panel center">
-    <button class="primary" data-act="continue">Continue &raquo;</button>
+    ${(()=>{
+      const s = seasonStatus(), o = outlook();
+      if(s.left<=0) return `
+        <p><b class="up">That was the last race of season ${state.season}.</b></p>
+        <p class="small ${o.cls==="up"?"up":""}">${o.text}</p>
+        <button class="primary" data-act="continue">See how the season finished &raquo;</button>`;
+      return `
+        <p>Race <b>${s.raced}</b> of <b>${WEEKS_PER_SEASON}</b> done &mdash;
+           <b class="${s.left===1?"up":""}">${s.left} race${s.left===1?"":"s"} left this season</b>.</p>
+        <p class="small ${o.cls}">${o.text}</p>
+        <button class="primary" data-act="continue">
+          ${s.left===1?"On to the final race":"On to race "+(s.raced+1)} &raquo;</button>`;
+    })()}
   </div>`;
 }
 
@@ -2006,7 +2096,7 @@ function screenSeasonEnd(){
 
 /* ---- master render -------------------------------------------- */
 function render(){
-  renderTop(); renderNav();
+  renderTop(); renderNav(); renderSeasonBar();
   const el=document.getElementById("screen");
   let html="";
   switch(state.screen){
