@@ -401,6 +401,31 @@ const PLOT_BY_STAT = {}; PLOTS.forEach(p=>PLOT_BY_STAT[p.stat]=p);
 const FACILITY_BONUS = 3;      // permanent stat bonus for owning the plot
 const HOME_FACILITY_MULT = 2;  // ...which counts double on your own ground
 
+/* ---- home advantage --------------------------------------------
+   Both of these lift your runners' attributes, not their raw speed.
+   A flat 8% on speed would be enormous - the whole speed attribute,
+   0 to 100, is only worth a 16% swing - so "8% better at home" is
+   applied to what the runners are made of instead.               */
+const HOME_BOOST    = 0.08;   // racing on your own ground
+const STADIUM_BOOST = 0.08;   // ...with a crowd in a stand behind you
+
+/* ---- the ground itself ------------------------------------------
+   Stands cost a fortune and only pay you back on home race day, but
+   the crowd lifts the team and the takings grow with the league.  */
+const STADIUMS = [
+  {id:"clubhouse",  name:"Clubhouse & Terrace", cost:2000,  level:1, gate:150,
+   desc:"A hut, a rope and somewhere to put the urn."},
+  {id:"grandstand", name:"Grandstand",          cost:6000,  level:2, gate:480,
+   desc:"Proper seating. People turn up early for a spot."},
+  {id:"mainstand",  name:"Main Stadium",        cost:15000, level:3, gate:1200,
+   desc:"A real arena. The noise on the finishing straight is something else."},
+];
+const GIFT_SHOP = {
+  id:"giftshop", name:"Club Gift Shop", cost:2500, weekly:70,
+  desc:"Vests, bobble hats and mugs. Ticks over all week and does a roaring trade on race day.",
+};
+const GIFT_HOME_MULT = 3;     // race day at home is the big earner
+
 /* ---- shoes ---------------------------------------------------- */
 const SHOES = {
   trainers:  {id:"trainers",  name:"Old Trainers",   cost:0,   mods:{}},
@@ -810,6 +835,7 @@ function effectiveStats(runner, ctx){
     let v = runner.stats[k];
     if(shoe && shoe.mods[k]) v += shoe.mods[k];
     if(ctx && ctx.facility && ctx.facility[k]) v += ctx.facility[k];
+    if(ctx && ctx.boost) v *= ctx.boost;      // home crowd behind them
     eff[k] = clamp(v,1,100);
   }
   return eff;
@@ -1312,7 +1338,7 @@ function drawCoursePreview(canvas, course){
    SECTION 6 : GAME STATE
    ================================================================ */
 const SAVE_KEY = "xcmanager_save_v1";
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 
 let state = null;
 let liveRace = null;       // the running race object (never saved)
@@ -1335,6 +1361,7 @@ function newGame(clubName){
     runners,
     order: runners.map(r=>r.id),
     plots: PLOTS.filter(p=>p.start).map(p=>p.id),
+    buildings: [],
     inventory,
     slots: TRAINING_SLOTS,
     rivals: [],
@@ -1406,9 +1433,37 @@ function facilityBonuses(atHome){
   });
   return f;
 }
+/* ---- the ground you own ---------------------------------------- */
+const hasBuilding = id => (state.buildings||[]).includes(id);
+function bestStadium(){
+  let best=null;
+  STADIUMS.forEach(s=>{ if(hasBuilding(s.id) && (!best || s.level>best.level)) best=s; });
+  return best;
+}
+/* How much better your runners are today. Both boosts only apply on
+   your own ground, and they lift attributes rather than raw speed. */
+function homeBoost(atHome){
+  if(!atHome) return 1;
+  return (1+HOME_BOOST) * (bestStadium() ? 1+STADIUM_BOOST : 1);
+}
+/* gate money, only ever taken on home race day */
+function gateReceipts(){
+  const st = bestStadium();
+  if(!st) return 0;
+  return Math.round(st.gate * (1 + state.tier*0.55));
+}
+/* the gift shop ticks over every week, and cleans up on home race day */
+function giftShopIncome(atHome){
+  if(!hasBuilding(GIFT_SHOP.id)) return 0;
+  const base = GIFT_SHOP.weekly * (1 + state.tier*0.45);
+  return Math.round(base * (atHome ? GIFT_HOME_MULT : 1));
+}
+
 /* At home you are racing on the exact ground you train on, so every
    facility you own counts double. */
-function playerCtx(atHome){ return {shoeFor, facility:facilityBonuses(atHome)}; }
+function playerCtx(atHome){
+  return {shoeFor, facility:facilityBonuses(atHome), boost:homeBoost(atHome)};
+}
 const ownsPlotFor = stat => state.plots.some(id=>{
   const p=PLOTS.find(x=>x.id===id); return p && p.stat===stat;
 });
@@ -1443,6 +1498,18 @@ function buyPlot(id){
   if(!p || state.plots.includes(id) || state.money<p.cost) return;
   state.money-=p.cost;
   state.plots.push(id);
+  save(); render();
+}
+
+function buyBuilding(id){
+  const item = STADIUMS.find(s=>s.id===id) || (id===GIFT_SHOP.id ? GIFT_SHOP : null);
+  if(!item || hasBuilding(id) || state.money<item.cost) return;
+  // no point owning a smaller stand than the one you already have
+  const st = bestStadium();
+  if(item.level && st && st.level>=item.level) return;
+  state.money -= item.cost;
+  state.buildings = state.buildings || [];
+  state.buildings.push(id);
   save(); render();
 }
 
@@ -1617,7 +1684,10 @@ function finishRace(){
   const place = st.findIndex(t=>t.isPlayer)+1;
   const tierMul = TIERS[state.tier].prize;
   const prize = Math.round(RACE_PRIZE[place-1]*tierMul);
-  state.money += prize;
+  const atHome = !!R.course.isHome;
+  const gate = atHome ? gateReceipts() : 0;         // only when you host
+  const shop = giftShopIncome(atHome);
+  state.money += prize + gate + shop;
 
   st.forEach((tm,i)=>{
     const rec = state.table[tm.club.id];
@@ -1634,7 +1704,9 @@ function finishRace(){
     venue: R.course.venue,
     lengthM: R.course.lengthM,
     week: state.week, season: state.season, tier: state.tier,
-    place, prize,
+    place, prize, gate, shop, atHome,
+    stadium: bestStadium() ? bestStadium().name : null,
+    boostPct: atHome ? Math.round((homeBoost(true)-1)*100) : 0,
     points: POINTS[place-1]||0,
     winTime: st[0].finishTime,
     myTime: me.finishTime,
@@ -1658,7 +1730,7 @@ function finishRace(){
     })),
   };
   const fx = state.fixtures[state.week];
-  if(fx) fx.result = {place, points:state.lastResult.points, prize};
+  if(fx) fx.result = {place, points:state.lastResult.points, prize, income:prize+gate+shop};
 
   state.raceState="done";
   save(); render();
@@ -1774,10 +1846,18 @@ function load(){
 /* v1 saves predate home grounds: give every club one and rebuild the
    fixture list, keeping results already raced this season. */
 function migrateSave(){
-  state.rivals.forEach(c=>{ if(!c.venue) c.venue = makeVenueFor(c.name, state.tier); });
-  const old = state.fixtures || [];
-  buildFixtures();
-  state.fixtures.forEach((f,i)=>{ if(old[i] && old[i].result) f.result = old[i].result; });
+  if(state.v < 2){
+    // v1 predates home grounds: give every club one, rebuild the fixtures
+    state.rivals.forEach(c=>{ if(!c.venue) c.venue = makeVenueFor(c.name, state.tier); });
+    const old = state.fixtures || [];
+    buildFixtures();
+    state.fixtures.forEach((f,i)=>{ if(old[i] && old[i].result) f.result = old[i].result; });
+  }
+  if(state.v < 3){
+    // v2 predates stands, the gift shop and race tactics
+    state.buildings = state.buildings || [];
+    state.runners.forEach(r=>{ if(!r.tactic) r.tactic = DEFAULT_TACTIC; });
+  }
   state.v = SAVE_VERSION;
   save();
 }
@@ -2017,7 +2097,51 @@ function screenShop(){
   }).join("");
 
   const spare = state.inventory.filter(i=>!i.wornBy);
+  const st = bestStadium();
+  const grounds = STADIUMS.map(s=>{
+    const owned = hasBuilding(s.id);
+    const outgrown = st && st.level>=s.level && !owned;
+    const afford = state.money>=s.cost;
+    const gateAt = Math.round(s.gate*(1+state.tier*0.55));
+    return `<div class="card ${owned?"owned":""} ${outgrown?"locked":""}">
+      <div class="row spread">
+        <span class="title">${s.name}</span>
+        <span class="price">${owned?"BUILT":money(s.cost)}</span>
+      </div>
+      <div class="muted small">${esc(s.desc)}</div>
+      <div>
+        <span class="tag good">+${Math.round(STADIUM_BOOST*100)}% at home</span>
+        <span class="tag good">${money(gateAt)} gate per home race</span>
+      </div>
+      ${owned?"":(outgrown
+        ? `<div class="tag">You already have a bigger stand</div>`
+        : `<button data-act="buybuilding" data-arg="${s.id}" ${afford?"":"disabled"}>Build</button>`)}
+    </div>`;
+  }).join("");
+
+  const shopOwned = hasBuilding(GIFT_SHOP.id);
+  const giftCard = `<div class="card ${shopOwned?"owned":""}">
+      <div class="row spread">
+        <span class="title">${GIFT_SHOP.name}</span>
+        <span class="price">${shopOwned?"BUILT":money(GIFT_SHOP.cost)}</span>
+      </div>
+      <div class="muted small">${esc(GIFT_SHOP.desc)}</div>
+      <div>
+        <span class="tag good">${money(Math.round(GIFT_SHOP.weekly*(1+state.tier*0.45)))} every race week</span>
+        <span class="tag good">x${GIFT_HOME_MULT} at home</span>
+      </div>
+      ${shopOwned?"":`<button data-act="buybuilding" data-arg="${GIFT_SHOP.id}" ${state.money>=GIFT_SHOP.cost?"":"disabled"}>Build</button>`}
+    </div>`;
+
   return `
+  <div class="panel">
+    <div class="row spread"><h2>Your Ground</h2><span class="chip money">Cash <b>${money(state.money)}</b></span></div>
+    <p class="muted small">You race at home once a season. A stand puts a crowd behind your runners
+      &mdash; worth <b>+${Math.round(STADIUM_BOOST*100)}%</b> on their attributes on top of the
+      <b>+${Math.round(HOME_BOOST*100)}%</b> you already get for being at home &mdash; and takes money
+      on the gate. Both only count on your own ground.</p>
+    <div class="grid cols3">${grounds}${giftCard}</div>
+  </div>
   <div class="panel">
     <div class="row spread"><h2>Terrain &amp; Facilities</h2><span class="chip money">Cash <b>${money(state.money)}</b></span></div>
     <p class="muted small">Buying a piece of terrain lets your squad train on it. Train it and they get
@@ -2055,7 +2179,7 @@ function screenLeague(){
         ${f.home?'<span class="tag good">Home</span>':`<span class="tag">at ${esc(host?host.code:"?")}</span>`}</td>
       <td>${done?ordinal(f.result.place):(isNow?'<span class="blink">NEXT UP</span>':"&mdash;")}</td>
       <td class="num">${done?f.result.points:""}</td>
-      <td class="num">${done?money(f.result.prize):""}</td>
+      <td class="num">${done?money(f.result.income!==undefined?f.result.income:f.result.prize):""}</td>
     </tr>`;
   }).join("");
 
@@ -2123,9 +2247,12 @@ function screenRacePreview(){
   }).join("");
 
   const homeNote = course.isHome
-    ? `<div class="banner good">Home fixture &mdash; every piece of terrain you have bought is
-        built into this course, and because your squad trains on it your facility bonuses
-        count double today.</div>`
+    ? `<div class="banner good">Home fixture &mdash; every piece of terrain you have bought is built
+        into this course, your facility bonuses count double, and your squad runs
+        <b>+${Math.round((homeBoost(true)-1)*100)}% stronger</b> today${
+          bestStadium()?` with the crowd in the ${esc(bestStadium().name)} behind them`:""}.
+        ${gateReceipts()?`Gate receipts of <b>${money(gateReceipts())}</b> are yours.`
+                        :`Build a stand on the Shop screen to take money on the gate.`}</div>`
     : `<div class="banner">Away at ${esc(course.hostName)}. Their ground, their kind of course.</div>`;
 
   return `
@@ -2265,6 +2392,14 @@ function screenResults(){
       <table><tr><th>Pos</th><th>Club</th><th>Time</th><th>Gap</th><th>Pts</th></tr>${pos}</table>
       <p class="small muted">Winning time ${fmtTime(res.winTime)} over ${SQUAD_SIZE} legs
         of ${res.lengthM}m.</p>
+      <h3 style="margin-top:10px">Takings</h3>
+      <table>
+        <tr><td>Prize money (${ordinal(res.place)})</td><td class="num">${money(res.prize)}</td></tr>
+        ${res.gate?`<tr><td>Gate receipts &mdash; ${esc(res.stadium)}</td><td class="num up">${money(res.gate)}</td></tr>`:""}
+        ${res.shop?`<tr><td>Gift shop${res.atHome?" (home race day)":""}</td><td class="num up">${money(res.shop)}</td></tr>`:""}
+        <tr><th>Total</th><th class="num">${money(res.prize+(res.gate||0)+(res.shop||0))}</th></tr>
+      </table>
+      ${res.atHome&&res.boostPct?`<p class="small up">Home advantage on the day: +${res.boostPct}% on your runners' attributes.</p>`:""}
     </div>
     <div class="panel">
       <h2>Where you lost time</h2>
@@ -2375,6 +2510,7 @@ document.addEventListener("click", e=>{
     case "train":     trainStat(arg); break;
     case "buyplot":   buyPlot(arg); break;
     case "buyshoe":   buyShoe(arg); break;
+    case "buybuilding": buyBuilding(arg); break;
     case "startrace": startRace(); break;
     case "speed":
       RaceView.speed=+arg;
@@ -2418,6 +2554,7 @@ window.XCM = {
   aiOrder, orderedRunners, playerCtx, save, load, SQUAD_SIZE, STAT_KEYS,
   autoPlayRace, autoOrder, autoTactics, sortedTable, ownsPlotFor, PLOTS, PLOT_BY_STAT, SHOES,
   TACTICS, rollExecution, tacticProfile, stepRace, setTactic, setAllTactics,
+  STADIUMS, GIFT_SHOP, buyBuilding, bestStadium, homeBoost, gateReceipts, giftShopIncome,
   teamAverage, startNextSeason, TIERS_LEN:TIERS.length, WEEKS_PER_SEASON,
 };
 /* === END OF PART 3 === */

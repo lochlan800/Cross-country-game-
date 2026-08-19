@@ -102,6 +102,26 @@ You spend it on:
   only things you can train until you start buying ground.
 - **Shoes** — mud claws, fell shoes, grass spikes, carbon racers. Each pair has trade-offs (carbon
   racers are quick but hopeless in mud). Pairs go into the kit bag and you assign them per runner.
+- **Your ground** — a Clubhouse & Terrace, a Grandstand or a full Main Stadium. A stand puts a crowd
+  behind your runners and takes money on the gate, and the takings grow with the league you are in.
+- **A club gift shop** — vests, bobble hats and mugs. It ticks over every race week and does three
+  times the trade on home race day.
+
+### Home advantage
+
+You race at home once a season, and it is worth turning up for:
+
+- **+8%** on your runners' attributes simply for being on your own ground
+- **+8%** more if you have a stand, with the crowd behind them
+- your facility bonuses count double
+- the course is the one built from the terrain you bought, which is the ground you train on
+- gate receipts and a bumper day in the gift shop
+
+Both percentages lift your runners' *attributes*, not their raw speed — the whole speed attribute,
+0 to 100, is only worth a 16% swing, so a flat 8% on speed would decide the race on its own. Even
+applied to attributes it is a big edge: an evenly matched squad wins about 2% of its away races and
+over 80% of its home ones. The constants are `HOME_BOOST` and `STADIUM_BOOST` near the top of the
+`DATA` section if you want a tighter contest.
 
 **Training** is three sessions a week, and each session trains the **whole squad** in one attribute.
 Gains shrink as an attribute approaches 100, so you can't just max everything.
