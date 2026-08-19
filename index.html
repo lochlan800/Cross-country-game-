@@ -319,32 +319,42 @@ const CLUB_NAMES = [
   ["Gallowtree Striders","GAL","#b45ad4"],
 ];
 
-/* ---- venues (race courses) ----------------------------------- */
-/* mix = how many of the 16 segments are each terrain
-   exposure = fraction of the loop that is wind-exposed         */
-const VENUES = [
-  {name:"Meadow Park",        code:"MDW", len:1300, tiers:[0,1],   mix:{flat:11,longGrass:3,mud:1,uneven:1},                exposure:0.10},
-  {name:"Miller's Field",     code:"MIL", len:1350, tiers:[0,1],   mix:{flat:8,longGrass:5,mud:2,hill:1},                   exposure:0.15},
-  {name:"Parson's Green",     code:"PRS", len:1250, tiers:[0],     mix:{flat:10,hill:2,longGrass:3,uneven:1},               exposure:0.05},
-  {name:"Blackthorn Common",  code:"BLC", len:1500, tiers:[1,2],   mix:{flat:5,mud:6,longGrass:3,uneven:2},                 exposure:0.20},
-  {name:"Cinder Hill",        code:"CDR", len:1450, tiers:[1,2],   mix:{flat:5,hill:6,uneven:3,mud:2},                      exposure:0.25},
-  {name:"Harrow Downs",       code:"HRW", len:1550, tiers:[1,2,3], mix:{flat:6,hill:4,longGrass:4,uneven:2},                exposure:0.45},
-  {name:"Stonewold Ridge",    code:"STN", len:1600, tiers:[2,3],   mix:{flat:4,uneven:6,hill:4,mud:2},                      exposure:0.40},
-  {name:"Ferndale Marsh",     code:"FRN", len:1600, tiers:[2,3],   mix:{flat:3,mud:7,longGrass:5,uneven:1},                 exposure:0.20},
-  {name:"Crag End",           code:"CRG", len:1700, tiers:[3,4],   mix:{flat:3,hill:6,uneven:5,mud:2},                      exposure:0.35},
-  {name:"Kestrel Moor",       code:"KSM", len:1750, tiers:[3,4],   mix:{flat:3,mud:4,hill:3,longGrass:3,uneven:3},          exposure:0.55},
-  {name:"Tarnbeck Nationals", code:"TRN", len:1800, tiers:[4],     mix:{flat:4,mud:4,hill:4,uneven:2,longGrass:2},          exposure:0.45},
-  {name:"Wraithfell",         code:"WRF", len:1800, tiers:[4],     mix:{flat:2,hill:5,mud:4,uneven:4,longGrass:1},          exposure:0.60},
+/* ---- course characters ---------------------------------------
+   Every club races on its own home ground, so each club is given
+   one of these. They are deliberately lopsided: a bog is a mud
+   slog, a ridge is a wind tunnel, a fell is nothing but climbing.
+   mix      = how many of the 16 segments are each terrain
+   exposure = fraction of the loop that is wind-exposed
+   tough    = 0 gentle .. 3 brutal, used to gate them by league   */
+const VENUE_TYPES = [
+  {suffix:"Park",    code:"PRK", tough:0, mix:{flat:12,longGrass:3,hill:1},                exposure:0.05},
+  {suffix:"Meadow",  code:"MDW", tough:0, mix:{flat:10,longGrass:5,mud:1},                 exposure:0.10},
+  {suffix:"Green",   code:"GRN", tough:0, mix:{flat:11,hill:2,longGrass:2,uneven:1},       exposure:0.12},
+  {suffix:"Common",  code:"CMN", tough:1, mix:{flat:7,longGrass:4,mud:3,hill:2},           exposure:0.20},
+  {suffix:"Downs",   code:"DWN", tough:1, mix:{flat:5,hill:6,longGrass:4,uneven:1},        exposure:0.45},
+  {suffix:"Marsh",   code:"MRS", tough:2, mix:{flat:3,mud:7,longGrass:5,uneven:1},         exposure:0.30},
+  {suffix:"Bog",     code:"BOG", tough:2, mix:{flat:3,mud:9,longGrass:3,uneven:1},         exposure:0.15},
+  {suffix:"Quarry",  code:"QRY", tough:2, mix:{flat:3,uneven:9,hill:4},                    exposure:0.30},
+  {suffix:"Fell",    code:"FEL", tough:3, mix:{flat:3,hill:8,uneven:4,mud:1},              exposure:0.40},
+  {suffix:"Ridge",   code:"RDG", tough:3, mix:{flat:5,hill:5,uneven:3,longGrass:3},        exposure:0.85},
+  {suffix:"Moor",    code:"MOR", tough:3, mix:{flat:3,hill:4,uneven:4,longGrass:3,mud:2},  exposure:0.70},
 ];
+/* which course characters a club in this league might own */
+const TIER_TOUGH = [0,1,2,3,3];
 
 /* ---- league structure ---------------------------------------- */
 const TIERS = [
   {name:"Village Fun Run League", short:"VILLAGE",  base:34, spread:9,  prize:1.0},
-  {name:"District League",        short:"DISTRICT", base:46, spread:9,  prize:2.0},
-  {name:"County League",          short:"COUNTY",   base:57, spread:8,  prize:3.4},
-  {name:"Regional League",        short:"REGIONAL", base:68, spread:8,  prize:5.0},
-  {name:"National League",        short:"NATIONAL", base:78, spread:7,  prize:7.0},
+  {name:"District League",        short:"DISTRICT", base:47, spread:9,  prize:2.0},
+  {name:"County League",          short:"COUNTY",   base:59, spread:8,  prize:3.4},
+  {name:"Regional League",        short:"REGIONAL", base:71, spread:8,  prize:5.0},
+  {name:"National League",        short:"NATIONAL", base:84, spread:7,  prize:7.0},
 ];
+/* How much a rival club improves each season it stays in a league.
+   The big clubs are full-time setups that keep developing, so the
+   National League never becomes a procession - you have to keep
+   getting better just to stay with them.                          */
+const RIVAL_GROWTH = [1.4, 2.0, 2.8, 3.6, 4.6];
 const TEAMS_PER_LEAGUE = 6;
 const WEEKS_PER_SEASON = 6;
 const SQUAD_SIZE = 10;
@@ -365,7 +375,8 @@ const PLOTS = [
   {id:"ridge",   stat:"wind",      name:"Exposed Ridge",     cost:1100, desc:"Nowhere to hide from the wind."},
 ];
 const PLOT_BY_STAT = {}; PLOTS.forEach(p=>PLOT_BY_STAT[p.stat]=p);
-const FACILITY_BONUS = 3;   // permanent stat bonus for owning the plot
+const FACILITY_BONUS = 3;      // permanent stat bonus for owning the plot
+const HOME_FACILITY_MULT = 2;  // ...which counts double on your own ground
 
 /* ---- shoes ---------------------------------------------------- */
 const SHOES = {
@@ -621,15 +632,60 @@ function buildCourse(venue, seed){
   };
 }
 
-function venuesForTier(tier){
-  const list = VENUES.filter(v=>v.tiers.includes(tier));
-  return list.length?list:VENUES.slice(0,3);
+/* the first word of a club name, used to name its home ground */
+function clubPlace(name){
+  return name.replace(/\b(AC|Harriers|Runners|Striders|Athletic|Pacers|Club|Trail|Fell)\b/g,"")
+             .trim().split(/\s+/)[0] || name.split(/\s+/)[0];
 }
-function courseForWeek(tier, season, week){
-  const list = venuesForTier(tier);
-  const v = list[(week + season*2) % list.length];
-  return buildCourse(v, hashStr(v.name)+season*97+week*13);
+
+/* the course characters a club in this league might own */
+function venueTypesForTier(tier){
+  const want = TIER_TOUGH[clamp(tier,0,TIERS.length-1)];
+  const pool = VENUE_TYPES.filter(v=>v.tough<=want+1 && v.tough>=want-1);
+  return pool.length?pool:VENUE_TYPES.slice();
 }
+
+/* give a club a home ground with real character, gated by league */
+function makeVenueFor(clubName, tier, type){
+  const t = type || pick(venueTypesForTier(tier));
+  return {
+    name: clubPlace(clubName)+" "+t.suffix,
+    code: t.code,
+    len: 1200 + tier*110 + ri(0,180),
+    mix: Object.assign({}, t.mix),
+    exposure: clamp(t.exposure + rnd(0.10,-0.05), 0, 0.95),
+  };
+}
+
+/* YOUR home ground is built from the terrain you have bought.
+   Every plot you own puts that ground into your own course - which
+   is also the ground you train on, so home is a real advantage. */
+const PLOT_TERRAIN = {mud:"mud", hills:"hill", longGrass:"longGrass", uneven:"uneven"};
+function playerHomeVenue(){
+  const mix = {flat:16};
+  let owned = 0;
+  state.plots.forEach(id=>{
+    const p = PLOTS.find(x=>x.id===id);
+    if(!p) return;
+    const terr = PLOT_TERRAIN[p.stat];
+    if(!terr) return;
+    mix[terr] = (mix[terr]||0) + 3;
+    mix.flat -= 3;
+    owned++;
+  });
+  if(mix.flat<1){ mix.flat = 1; }
+  return {
+    name: clubPlace(state.club.name)+" Home Ground",
+    code: "HOM",
+    len: 1300 + state.tier*90,
+    mix,
+    // an exposed ridge in the grounds means the wind gets in
+    exposure: ownsPlotFor("wind") ? 0.55 : 0.10,
+    home: true,
+    plotsBuilt: owned,
+  };
+}
+
 function hashStr(s){
   let h=2166136261;
   for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
@@ -641,6 +697,9 @@ function makeRivals(tier, count, exclude){
   const pool = CLUB_NAMES.filter(c=>!exclude.includes(c[0]));
   shuffle(pool);
   const t = TIERS[tier];
+  // deal out distinct course characters so no two clubs in a league
+  // run on the same kind of ground
+  const venuePool = shuffle(venueTypesForTier(tier).slice());
   const out=[];
   for(let i=0;i<count;i++){
     const [name,code,col] = pool[i%pool.length];
@@ -650,6 +709,7 @@ function makeRivals(tier, count, exclude){
       id:uid(), name, code, colour:col, isPlayer:false,
       strength: t.base + offset,
       runners: makeSquad(t.base+offset, t.spread*0.55, true),
+      venue: makeVenueFor(name, tier, venuePool[i%venuePool.length]),
     });
   }
   return out;
@@ -1097,6 +1157,7 @@ function drawCoursePreview(canvas, course){
    SECTION 6 : GAME STATE
    ================================================================ */
 const SAVE_KEY = "xcmanager_save_v1";
+const SAVE_VERSION = 2;
 
 let state = null;
 let liveRace = null;       // the running race object (never saved)
@@ -1111,7 +1172,7 @@ function newGame(clubName){
     return pair;
   });
   state = {
-    v:1,
+    v:SAVE_VERSION,
     club:{id:uid(), name:clubName||"Hillside Harriers", code:makeCode(clubName||"Hillside Harriers"),
           colour:"#f5c542", isPlayer:true},
     money:500,
@@ -1150,13 +1211,23 @@ function resetTable(){
   state.table={};
   allClubs().forEach(c=>{ state.table[c.id]={pts:0, played:0, wins:0, best:99, totalPos:0}; });
 }
+/* Six races, six clubs: everyone hosts one round on their own ground,
+   so exactly one race a season is at home and the rest are away on
+   whatever the opposition runs on - bog, fell, ridge or gentle park. */
 function buildFixtures(){
-  state.fixtures=[];
-  for(let w=0;w<WEEKS_PER_SEASON;w++){
-    const list=venuesForTier(state.tier);
-    const v=list[(w+state.season*2)%list.length];
-    state.fixtures.push({week:w, venue:v.name, code:v.code, result:null});
-  }
+  const hosts = shuffle(allClubs().map(c=>c.id)).slice(0,WEEKS_PER_SEASON);
+  // if the league is ever smaller than the season, wrap the host list
+  while(hosts.length<WEEKS_PER_SEASON) hosts.push(hosts[hosts.length%allClubs().length]);
+  state.fixtures = hosts.map((hostId,w)=>{
+    const host = clubById(hostId);
+    const venue = hostId===state.club.id ? playerHomeVenue() : host.venue;
+    return {
+      week:w, hostId,
+      venue: venue.name, code: venue.code,
+      home: hostId===state.club.id,
+      result:null,
+    };
+  });
 }
 function sortedTable(){
   return allClubs().map(c=>({club:c, ...state.table[c.id]}))
@@ -1171,15 +1242,18 @@ function shoeFor(runner){
   const inv = state.inventory.find(i=>i.uid===runner.shoeUid);
   return inv ? SHOES[inv.shoe] : SHOES.trainers;
 }
-function facilityBonuses(){
+function facilityBonuses(atHome){
   const f={};
+  const mult = atHome ? HOME_FACILITY_MULT : 1;
   state.plots.forEach(id=>{
     const p = PLOTS.find(x=>x.id===id);
-    if(p) f[p.stat]=(f[p.stat]||0)+FACILITY_BONUS;
+    if(p) f[p.stat]=(f[p.stat]||0)+FACILITY_BONUS*mult;
   });
   return f;
 }
-function playerCtx(){ return {shoeFor, facility:facilityBonuses()}; }
+/* At home you are racing on the exact ground you train on, so every
+   facility you own counts double. */
+function playerCtx(atHome){ return {shoeFor, facility:facilityBonuses(atHome)}; }
 const ownsPlotFor = stat => state.plots.some(id=>{
   const p=PLOTS.find(x=>x.id===id); return p && p.stat===stat;
 });
@@ -1273,17 +1347,31 @@ function autoOrder(){
   save(); render();
 }
 
+/* the venue for a given fixture - your own ground when you host */
+function venueForFixture(fx){
+  if(!fx) return playerHomeVenue();
+  if(fx.hostId===state.club.id) return playerHomeVenue();   // rebuilt live, so
+  const host = clubById(fx.hostId);                          // new terrain shows up
+  return (host && host.venue) || playerHomeVenue();
+}
+
 function currentCourse(){
-  if(liveCourse && liveCourse._week===state.week && liveCourse._season===state.season) return liveCourse;
-  liveCourse = courseForWeek(state.tier, state.season, state.week);
-  liveCourse._week=state.week; liveCourse._season=state.season;
+  const plotCount = state.plots.length;   // buying terrain changes your home course
+  if(liveCourse && liveCourse._week===state.week && liveCourse._season===state.season
+     && liveCourse._plots===plotCount) return liveCourse;
+  const fx = state.fixtures[state.week];
+  const venue = venueForFixture(fx);
+  liveCourse = buildCourse(venue, hashStr(venue.name)+state.season*97+state.week*13);
+  liveCourse.isHome = !!(fx && fx.hostId===state.club.id);
+  liveCourse.hostName = fx ? (clubById(fx.hostId)||state.club).name : state.club.name;
+  liveCourse._week=state.week; liveCourse._season=state.season; liveCourse._plots=plotCount;
   return liveCourse;
 }
 
 /* ---- race day ------------------------------------------------- */
 function buildRace(){
   const course = currentCourse();
-  const entries=[{club:state.club, order:orderedRunners(), ctx:playerCtx()}];
+  const entries=[{club:state.club, order:orderedRunners(), ctx:playerCtx(course.isHome)}];
   state.rivals.forEach(c=>{
     entries.push({club:c, order:aiOrder(c, course), ctx:{}});
   });
@@ -1411,9 +1499,11 @@ function startNextSeason(){
   if(changed){
     state.rivals = makeRivals(state.tier, TEAMS_PER_LEAGUE-1, [state.club.name]);
   }else{
-    // clubs you know get a little better every year
+    // clubs you know get better every year, and the higher the league
+    // the harder they work at it
+    const g = RIVAL_GROWTH[clamp(state.tier,0,RIVAL_GROWTH.length-1)];
     state.rivals.forEach(c=>c.runners.forEach(r=>{
-      STAT_KEYS.forEach(k=>{ r.stats[k]=clamp(r.stats[k]+2.0*(1-r.stats[k]/100),1,99); });
+      STAT_KEYS.forEach(k=>{ r.stats[k]=clamp(r.stats[k]+g*(1-r.stats[k]/100),1,99); });
     }));
   }
   resetTable();
@@ -1463,14 +1553,26 @@ function load(){
     const raw = localStorage.getItem(SAVE_KEY);
     if(!raw) return false;
     const s = JSON.parse(raw);
-    if(!s || s.v!==1 || !s.runners) return false;
+    if(!s || !s.runners || !s.v || s.v>SAVE_VERSION) return false;
     state = s;
     _uid = s.uidSeed || 10000;
+    if(s.v < SAVE_VERSION) migrateSave();
     state.raceState = state.raceState==="running" ? null : state.raceState;
     liveRace=null; liveCourse=null;
     return true;
   }catch(e){ return false; }
 }
+/* v1 saves predate home grounds: give every club one and rebuild the
+   fixture list, keeping results already raced this season. */
+function migrateSave(){
+  state.rivals.forEach(c=>{ if(!c.venue) c.venue = makeVenueFor(c.name, state.tier); });
+  const old = state.fixtures || [];
+  buildFixtures();
+  state.fixtures.forEach((f,i)=>{ if(old[i] && old[i].result) f.result = old[i].result; });
+  state.v = SAVE_VERSION;
+  save();
+}
+
 function wipeSave(){
   if(!confirm("Delete your save and start a brand new club?")) return;
   localStorage.removeItem(SAVE_KEY);
@@ -1686,9 +1788,11 @@ function screenLeague(){
   const fixtures = state.fixtures.map(f=>{
     const done = !!f.result;
     const isNow = f.week===state.week && !done;
+    const host = clubById(f.hostId);
     return `<tr class="${isNow?"me":""}">
       <td class="num">${f.week+1}</td>
-      <td>${esc(f.venue)}</td>
+      <td>${esc(f.venue)}
+        ${f.home?'<span class="tag good">Home</span>':`<span class="tag">at ${esc(host?host.code:"?")}</span>`}</td>
       <td>${done?ordinal(f.result.place):(isNow?'<span class="blink">NEXT UP</span>':"&mdash;")}</td>
       <td class="num">${done?f.result.points:""}</td>
       <td class="num">${done?money(f.result.prize):""}</td>
@@ -1732,7 +1836,7 @@ function screenLeague(){
 function screenRacePreview(){
   const course = currentCourse();
   const mix = course.mixSummary();
-  const ctx = playerCtx();
+  const ctx = playerCtx(course.isHome);
   const order = orderedRunners().map((r,i)=>{
     const eff=effectiveStats(r,ctx);
     let fit=0,w=0;
@@ -1743,11 +1847,21 @@ function screenRacePreview(){
       <td class="muted small">${esc((state.inventory.find(p=>p.uid===r.shoeUid)||{shoe:"none"}).shoe==="none"?"barefoot":SHOES[(state.inventory.find(p=>p.uid===r.shoeUid)||{shoe:"trainers"}).shoe].name)}</td></tr>`;
   }).join("");
 
+  const homeNote = course.isHome
+    ? `<div class="banner good">Home fixture &mdash; every piece of terrain you have bought is
+        built into this course, and because your squad trains on it your facility bonuses
+        count double today.</div>`
+    : `<div class="banner">Away at ${esc(course.hostName)}. Their ground, their kind of course.</div>`;
+
   return `
+  ${homeNote}
   <div class="panel">
     <div class="row spread">
       <h2>Race Day &mdash; ${esc(course.venue)}</h2>
-      <span class="chip">Week <b>${state.week+1}/${WEEKS_PER_SEASON}</b></span>
+      <div class="row">
+        <span class="chip">${course.isHome?"<b>HOME</b>":"Away"}</span>
+        <span class="chip">Week <b>${state.week+1}/${WEEKS_PER_SEASON}</b></span>
+      </div>
     </div>
     <div id="raceWrap"><canvas id="preview"></canvas></div>
     <div class="row spread" style="margin-top:10px">
@@ -1974,8 +2088,9 @@ else boot();
 
 /* expose a few internals for headless balance testing */
 window.XCM = {
-  get state(){return state;}, newGame, buildCourse, VENUES, TIERS, makeSquad, makeRivals,
-  newRace, simulateToEnd, standings, analyseTeam, effectiveStats, courseForWeek,
+  get state(){return state;}, newGame, buildCourse, VENUE_TYPES, TIERS, makeSquad, makeRivals,
+  newRace, simulateToEnd, standings, analyseTeam, effectiveStats, currentCourse,
+  playerHomeVenue, makeVenueFor, buildFixtures,
   startRace, finishRace, continueAfterRace, trainStat, buyPlot, buyShoe, render,
   aiOrder, orderedRunners, playerCtx, save, load, SQUAD_SIZE, STAT_KEYS,
   autoPlayRace, autoOrder, sortedTable, ownsPlotFor, PLOTS, PLOT_BY_STAT, SHOES,
