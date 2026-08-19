@@ -55,6 +55,31 @@ into your own loop, so it starts as a bare flat field and turns into a proper te
 invest. And because your squad trains on that exact ground, your facility bonuses count double at
 home — the one race a season you should really fancy your chances.
 
+### Race tactics
+
+Before each race you brief every runner on how to race their leg:
+
+| Tactic | What it does |
+|---|---|
+| **Even Pace** | Steady and sensible. Almost never goes wrong. |
+| **Front Run** | Go hard from the gun and try to break them. Brutal on the legs. |
+| **Sit And Kick** | Tuck in, save everything, unleash it late. |
+| **Negative Split** | Start within yourself and wind it up all the way home. |
+| **Hold The Inside** | Fight for the shortest line — quickest route, but that is where the traffic is. |
+| **Stay Wide** | Run in clean air out of the trouble. Safe, but it is the long way round. |
+
+They will *try*. Each tactic leans on an attribute — front running needs fitness, a kick needs
+sprint, holding the inside needs sure footing — and a runner who isn't built for it can get it
+wrong, pay the price and get nothing back. The results screen tells you who nailed it and who
+didn't.
+
+Runners pick their own line through the race, drift across the track, and swing out to pass when
+somebody is in their way. **The inside is the shortest way round, so it is quicker — but it is also
+the line everybody runs, so it churns up worst and it is where you get boxed in.** On firm ground
+the inside wins; on a muddy course the fresher ground out wide is often faster. There is no single
+right answer, which is the point. **Suggest Tactics** reads the course and briefs the squad for you
+if you would rather not micro-manage.
+
 ### Finding out what went wrong
 
 After every race the results screen shows **where you lost time** — the seconds your squad gave away

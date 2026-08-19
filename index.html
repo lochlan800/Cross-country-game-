@@ -436,6 +436,62 @@ const SPRINT_ZONE = 0.90;             // last 10% of a leg
    is worn away by leg 10.                                          */
 const CHURN = {mud:0.22, longGrass:0.14, uneven:0.11, hill:0.07, flat:0.0};
 
+/* ---- race tactics ---------------------------------------------
+   You brief each runner before the race. They will try to run it -
+   but a hard tactic asks a lot, and a runner who is not built for it
+   can get it wrong, pay the price and get nothing back.
+     lane   : where on the track they want to be, -1 inside .. +1 wide
+     effort : pace multiplier through the leg, by fraction completed
+     drain  : how much harder it is on the legs
+     kick   : multiplier on their finishing sprint
+     risk   : how likely it is to go wrong
+     stat   : the attribute that decides whether they pull it off    */
+const TACTICS = {
+  even: {
+    id:"even", name:"Even Pace", short:"EVEN", stat:"fitness", risk:0.06, drain:1.00, kick:1.00, lane:-0.15,
+    effort:()=>1.0,
+    desc:"Steady and sensible. Hard to get wrong.",
+  },
+  front: {
+    id:"front", name:"Front Run", short:"FRONT", stat:"fitness", risk:0.30, drain:1.12, kick:0.95, lane:-0.55,
+    effort:f=> f<0.55 ? 1.038 : 0.982,
+    desc:"Go hard from the gun and try to break them. Brutal on the legs.",
+  },
+  kick: {
+    id:"kick", name:"Sit And Kick", short:"KICK", stat:"sprint", risk:0.24, drain:0.93, kick:1.28, lane:0.10,
+    effort:f=> f<0.70 ? 0.975 : 1.055,
+    desc:"Tuck in behind, save everything, unleash it late.",
+  },
+  chase: {
+    id:"chase", name:"Negative Split", short:"CHASE", stat:"fitness", risk:0.16, drain:1.04, kick:1.10, lane:-0.10,
+    effort:f=> f<0.40 ? 0.965 : 1.035,
+    desc:"Start within yourself and wind it up all the way home.",
+  },
+  inside: {
+    id:"inside", name:"Hold The Inside", short:"INSIDE", stat:"uneven", risk:0.26, drain:1.06, kick:1.00, lane:-0.88,
+    effort:()=>1.0,
+    desc:"Fight for the shortest line. Quickest route, but you get boxed in.",
+  },
+  wide: {
+    id:"wide", name:"Stay Wide", short:"WIDE", stat:"fitness", risk:0.05, drain:1.02, kick:1.05, lane:0.58,
+    effort:()=>1.0,
+    desc:"Run in clean air out of the traffic. Safe, but it is the long way round.",
+  },
+};
+const TACTIC_LIST = Object.values(TACTICS);
+const DEFAULT_TACTIC = "even";
+const tacticOf = r => TACTICS[r && r.tactic] || TACTICS[DEFAULT_TACTIC];
+
+/* ---- racing lines --------------------------------------------- */
+const LANE_DRIFT  = 0.85;   // how quickly a runner changes line (per second)
+const LANE_GAIN   = 0.011;  // pace advantage of the inside line
+const LANE_PIXELS = 7;      // how far across the track that is, on screen
+const BLOCK_GAP   = 20;     // metres ahead that counts as being in your way
+const BLOCK_LANE  = 0.30;   // how close their line has to be to block you
+const BLOCK_COST  = 0.935;  // what being boxed in costs you
+const BLOCK_SWING = 0.85;   // how far you pull out to get round them
+const LANE_CHURN  = 0.60;   // how much worse the churn is on the inside line
+
 /* ---- 5x7 bitmap font for the canvas HUD ---------------------- */
 const FONT = {
   "A":".###./#...#/#...#/#####/#...#/#...#/#...#",
@@ -558,6 +614,7 @@ function makeRunner(mean, spread, archetype, usedNames){
     name: first+" "+last,
     stats,
     shoeUid:null,          // which pair of shoes from the inventory
+    tactic: DEFAULT_TACTIC,
     age: ri(17,29),
     archetype: archetype?archetype.name:"Runner",
   };
@@ -758,17 +815,43 @@ function effectiveStats(runner, ctx){
   return eff;
 }
 
+/* Can this runner actually pull off what you asked for? Rolled once,
+   before they take the baton. Better runners get it wrong less often,
+   but nobody is immune. */
+function rollExecution(tac, eff){
+  const skill = eff[tac.stat] || 50;
+  const botch = tac.risk * (1 - skill/130) * 0.8;
+  const r = Math.random();
+  if(r < botch)                  return "bad";
+  if(r < botch + tac.risk*0.70)  return "ok";
+  return "good";
+}
+/* what the tactic actually does, once execution is taken into account */
+function tacticProfile(tac, exec){
+  if(exec==="good") return {dev:1.00, drain:tac.drain,                 kick:tac.kick};
+  if(exec==="ok")   return {dev:0.60, drain:1+(tac.drain-1)*0.80,      kick:1+(tac.kick-1)*0.50};
+  // botched: they went and did it anyway, paid for it, and got nothing back
+  return              {dev:1.00, drain:1+(tac.drain-1)*1.50+0.10, kick:Math.min(1,tac.kick*0.70)};
+}
+
 function makeRaceRunner(runner, ctx){
+  const eff = effectiveStats(runner,ctx);
+  const tac = tacticOf(runner);
+  const exec = rollExecution(tac, eff);
   return {
     ref:runner,
     name:runner.name,
-    eff:effectiveStats(runner,ctx),
+    eff,
+    tactic:tac,
+    exec,
+    prof:tacticProfile(tac,exec),
     form: 1 + gauss()*0.028,          // how they've turned up on the day
     phase: Math.random()*6.283,
     lost:{},                          // seconds lost, by stat key
     sprintGain:0,
     staminaEnd:100,
     legTime:0,
+    boxedFor:0,                       // seconds spent stuck behind someone
     ran:false,
   };
 }
@@ -786,6 +869,7 @@ function newRace(course, entries){
       runners:e.order.map(r=>makeRaceRunner(r,e.ctx)),
       leg:0, dist:0, total:0, stamina:100, lastSpeed:BASE_SPEED,
       legStart:0, done:false, finishTime:0, place:0, handover:-99,
+      lane:0, blocked:false,
     });
   });
   return R;
@@ -808,8 +892,12 @@ function stepRace(R, dt){
     let T = 1, tstat = null, Tmax = 1;
     if(seg.terrain !== "flat"){
       tstat = TERRAIN[seg.terrain].stat;
-      // ground churns up leg by leg, eating into the terrain advantage
-      const churn = 1 - (CHURN[seg.terrain]||0)*(tm.leg/(SQUAD_SIZE-1));
+      // The ground churns up leg by leg - and worst of all on the inside,
+      // because that is the line everybody runs. Out wide the going is
+      // longer but fresher, which is a real trade on soft ground.
+      const wear  = (CHURN[seg.terrain]||0)*(tm.leg/(SQUAD_SIZE-1))
+                  * (1 - LANE_CHURN*tm.lane);
+      const churn = 1 - wear;
       T    = T_MIN + T_RANGE*(r.eff[tstat]/100)*churn;    // terrain skill
       Tmax = T_MIN + T_RANGE*churn;                       // same, at stat 100
     }
@@ -819,10 +907,31 @@ function stepRace(R, dt){
              : FA_FLOOR + (1-FA_FLOOR)*(tm.stamina/FA_KNEE);   // fatigue
     let S = 1;
     if(frac > SPRINT_ZONE)
-      S = 1 + SPRINT_GAIN*(r.eff.sprint/100)*((frac-SPRINT_ZONE)/(1-SPRINT_ZONE));
+      S = 1 + SPRINT_GAIN*r.prof.kick*(r.eff.sprint/100)*((frac-SPRINT_ZONE)/(1-SPRINT_ZONE));
     const wob = 1 + Math.sin(R.t*0.11 + r.phase)*0.012;   // small live variance
 
-    const v = BASE_SPEED * B * T * W * Fa * S * r.form * wob;
+    // --- tactics: how hard they are running right now -----------
+    const E = 1 + (r.tactic.effort(frac) - 1) * r.prof.dev;
+
+    // --- racing line --------------------------------------------
+    // Someone just ahead on your line is in your way until you pull out.
+    let blocked = false;
+    for(let i=0;i<R.teams.length;i++){
+      const o = R.teams[i];
+      if(o===tm || o.done) continue;
+      const ahead = o.total - tm.total;
+      if(ahead>0 && ahead<BLOCK_GAP && Math.abs(o.lane-tm.lane)<BLOCK_LANE){ blocked=true; break; }
+    }
+    tm.blocked = blocked;
+    if(blocked) r.boxedFor += dt;
+    let want = r.tactic.lane + Math.sin(R.t*0.23 + r.phase)*0.14;   // nobody runs a ruler line
+    if(blocked) want = clamp(want + BLOCK_SWING, -1, 1);            // swing out to get round
+    tm.lane += clamp(want - tm.lane, -LANE_DRIFT*dt, LANE_DRIFT*dt);
+    tm.lane = clamp(tm.lane, -1, 1);
+    const LN = 1 - LANE_GAIN*tm.lane;          // the inside is the shorter way round
+    const BK = blocked ? BLOCK_COST : 1;
+
+    const v = BASE_SPEED * B * T * W * Fa * S * r.form * wob * E * LN * BK;
     const d = v*dt;
     const tickTime = d/v;                                 // == dt, kept explicit
 
@@ -839,7 +948,8 @@ function stepRace(R, dt){
     const drain = STAM_DRAIN
                 * (FIT_DRAIN_MIN - FIT_DRAIN_RANGE*(r.eff.fitness/100))
                 * TERRAIN[seg.terrain].drain
-                * (seg.exposed?1.08:1);
+                * (seg.exposed?1.08:1)
+                * r.prof.drain;
     tm.stamina = Math.max(0, tm.stamina - drain*dt);
 
     tm.dist += d; tm.total += d; tm.lastSpeed = v;
@@ -937,6 +1047,17 @@ function drawRunnerSprite(ctx, x, y, frame, colour, halo){
     ctx.fillStyle = c==="H" ? "#eccfa4" : (c==="B" ? colour : "#252b38");
     ctx.fillRect(bx+px[i][0]*S, by+px[i][1]*S, S, S);
   }
+}
+
+/* a badge on the course itself when it is your own ground */
+function drawHomeBadge(c){
+  const label = "HOME COURSE";
+  const w = textW(label)+8, x = TRACK.x+4, y = TRACK.y+4;
+  c.fillStyle="#241f0d"; c.fillRect(x,y,w,15);
+  c.fillStyle="#f5c542";
+  c.fillRect(x,y,w,1); c.fillRect(x,y+14,w,1);
+  c.fillRect(x,y,1,15); c.fillRect(x+w-1,y,1,15);
+  drawText(c,label,x+4,y+4,"#f5c542");
 }
 
 /* work out how to fit the loop into the track area */
@@ -1076,6 +1197,7 @@ const RaceView = {
     c.fillStyle="#39465f"; c.fillRect(0,20,CW,1);
     const me = R.teams.find(t=>t.isPlayer);
     drawText(c, R.course.venue.slice(0,22), 4, 7, "#f5c542");
+    if(R.course.isHome) drawHomeBadge(c);
     const legTxt = "LEG "+Math.min(SQUAD_SIZE,(me?me.leg+1:1))+"/"+SQUAD_SIZE;
     drawText(c, legTxt, 190, 7, "#d9e2f2");
     drawText(c, fmtTime(R.t), CW-4-textW(fmtTime(R.t)), 7, "#8493ad");
@@ -1091,9 +1213,10 @@ const RaceView = {
         drawRunnerSprite(c, p.x+ (tm.place%2?10:-10), p.y+12, 0, tm.colour, null);
         return;
       }
-      // fan the clubs out across the width of the track so a tight pack
-      // reads as a pack instead of one sprite stacked on another
-      const lane = (R.teams.indexOf(tm) - (R.teams.length-1)/2) * 3.4;
+      // runners sit on their own racing line, and a tiny per-club offset
+      // keeps two clubs on the same line from drawing on top of each other
+      const nudge = (R.teams.indexOf(tm) - (R.teams.length-1)/2) * 1.15;
+      const lane = tm.lane*LANE_PIXELS + nudge;
       p.x += Math.cos(a.ang+Math.PI/2)*lane;
       p.y += Math.sin(a.ang+Math.PI/2)*lane;
       const frame = ((tm.total/2.2)|0) & 3;
@@ -1158,6 +1281,14 @@ const RaceView = {
       const seg=R.course.segAt(me.dist/R.course.lengthM);
       const tn=TERRAIN[seg.terrain].name+(seg.exposed?" / WIND":"");
       drawText(c,tn,TRACK.x+TRACK.w-4-textW(tn),CH-9,TERRAIN[seg.terrain].col);
+      // what they were told to do, and how it is going
+      let tacTxt = r.tactic.short, tacCol = "#8fa8c9";
+      if(me.blocked){ tacTxt = "BOXED IN"; tacCol = "#e0574a"; }
+      else if(me.dist/R.course.lengthM > 0.45){
+        if(r.exec==="bad"){ tacTxt = r.tactic.short+" GONE WRONG"; tacCol = "#e0574a"; }
+        else if(r.exec==="good"){ tacCol = "#5fd35f"; }
+      }
+      drawText(c,tacTxt,TRACK.x+TRACK.w-4-textW(tacTxt),CH-17,tacCol);
     }
   }
 };
@@ -1174,6 +1305,7 @@ function drawCoursePreview(canvas, course){
   drawText(c,course.venue,4,7,"#f5c542");
   const d=(course.lengthM)+"M LAP";
   drawText(c,d,CW-4-textW(d),7,"#8493ad");
+  if(course.isHome) drawHomeBadge(c);
   // the terrain breakdown is listed in HTML underneath the canvas
 }
 /* ================================================================
@@ -1344,6 +1476,44 @@ function assignShoe(runnerId, pairUid){
   save(); render();
 }
 
+function setTactic(runnerId, tacticId){
+  const r = state.runners.find(x=>x.id===runnerId);
+  if(!r || !TACTICS[tacticId]) return;
+  r.tactic = tacticId;
+  save(); render();
+}
+function setAllTactics(tacticId){
+  if(!TACTICS[tacticId]) return;
+  state.runners.forEach(r=>{ r.tactic = tacticId; });
+  save(); render();
+}
+
+/* Read the course and brief the squad sensibly: on heavy, churned-up
+   ground the wide line is fresher and a saved kick pays; on firm ground
+   the short inside line and honest front running win. */
+function autoTactics(){
+  const course = currentCourse();
+  const mix = course.mixSummary();
+  let soft=0, total=0;
+  for(const k in mix){ soft += (CHURN[k]||0)*mix[k]; total += mix[k]; }
+  const heavy = (soft/Math.max(1,total)) > 0.055;      // is this a slog?
+  const ctx = playerCtx(course.isHome);
+  const order = orderedRunners();
+  order.forEach((r,i)=>{
+    const eff = effectiveStats(r,ctx);
+    const last = i===order.length-1;
+    let t;
+    if(last && eff.sprint>=55)            t = "kick";
+    else if(heavy)                        t = eff.sprint>=65 ? "kick" : "wide";
+    else if(eff.uneven>=65)               t = "inside";
+    else if(eff.fitness>=68)              t = "front";
+    else if(eff.sprint>=62)               t = "kick";
+    else                                  t = "even";
+    r.tactic = t;
+  });
+  save(); render();
+}
+
 function moveInOrder(runnerId, dir){
   const i = state.order.indexOf(runnerId);
   const j = i+dir;
@@ -1423,7 +1593,21 @@ function aiOrder(club, course){
     }
     return (w>0?heavy/w:r.stats.speed) + gauss()*7;
   };
-  return club.runners.slice().sort((a,b)=>rate(a)-rate(b));
+  const order = club.runners.slice().sort((a,b)=>rate(a)-rate(b));
+  // rival managers brief their runners too - mostly sensibly, picking
+  // tactics that suit the runner they are sending out
+  order.forEach((r,i)=>{
+    const roll = Math.random();
+    let t = "even";
+    if(r.stats.sprint > 68 && roll<0.55)                    t = "kick";
+    else if(r.stats.fitness > 70 && roll<0.40)              t = "front";
+    else if(r.stats.uneven > 68 && roll<0.30)               t = "inside";
+    else if(roll<0.18)                                      t = "chase";
+    else if(roll>0.93)                                      t = "wide";
+    if(i===SQUAD_SIZE-1 && r.stats.sprint>60 && roll<0.7)   t = "kick";  // anchor leg
+    r.tactic = t;
+  });
+  return order;
 }
 
 function finishRace(){
@@ -1467,6 +1651,8 @@ function finishRace(){
     },{}),
     legs: me.runners.map((r,i)=>({
       leg:i+1, name:r.name, time:r.legTime, staminaEnd:r.staminaEnd,
+      tactic:r.tactic.name, tacticShort:r.tactic.short, exec:r.exec,
+      boxedFor:r.boxedFor,
       lost:Object.keys(r.lost).reduce((o,k)=>{o[k]=r.lost[k];return o;},{}),
       sprintGain:r.sprintGain,
     })),
@@ -1626,8 +1812,10 @@ function statCell(v){
 
 /* ---- where am I in the season, and what happens if it ends now? --- */
 function seasonStatus(){
-  const raced = state.fixtures.filter(f=>f.result).length;
-  return {raced, left: WEEKS_PER_SEASON - raced, pos: myTablePos()};
+  // on the results screen the week has not ticked over yet, so take
+  // whichever count is further on - they agree in normal play
+  const raced = Math.max(state.week, state.fixtures.filter(f=>f.result).length);
+  return {raced, left: Math.max(0, WEEKS_PER_SEASON - raced), pos: myTablePos()};
 }
 function outlook(){
   const pos = myTablePos();
@@ -1678,7 +1866,9 @@ function renderTop(){
   const raced = state.week;
   document.getElementById("strip").innerHTML = `
     <span class="chip money">Cash <b>${money(state.money)}</b></span>
-    <span class="chip">Race <b>${Math.min(state.week+1,WEEKS_PER_SEASON)} of ${WEEKS_PER_SEASON}</b></span>
+    <span class="chip">${seasonStatus().left>0
+      ? `Race <b>${seasonStatus().raced+1} of ${WEEKS_PER_SEASON}</b>`
+      : `<b>Season over</b>`}</span>
     <span class="chip">Training <b>${state.slots}/${TRAINING_SLOTS}</b></span>
     <span class="chip">Position <b>${ordinal(myTablePos())}</b></span>
     <span class="chip">Squad AVG <b>${teamAverage().toFixed(1)}</b></span>`;
@@ -1918,8 +2108,17 @@ function screenRacePreview(){
     let fit=0,w=0;
     for(const k in mix){ fit+=eff[TERRAIN[k].stat]*mix[k]; w+=mix[k]; }
     const suit = fit/w;
+    const tac = tacticOf(r);
+    // how well suited they are to what you have asked of them
+    const skill = eff[tac.stat];
+    const conf = skill>=70?["good","Confident"]:(skill>=48?["","Should manage"]:["bad","Risky"]);
     return `<tr><td class="num">${i+1}</td><td>${esc(r.name)}</td>
       <td>${statCell(suit)}</td>
+      <td><select data-act="tactic" data-arg="${r.id}">
+        ${TACTIC_LIST.map(t=>`<option value="${t.id}" ${t.id===tac.id?"selected":""}>${esc(t.name)}</option>`).join("")}
+      </select></td>
+      <td><span class="tag ${conf[0]}">${conf[1]}</span>
+        <span class="muted small">${STAT_BY_KEY[tac.stat].short} ${Math.round(skill)}</span></td>
       <td class="muted small">${esc((state.inventory.find(p=>p.uid===r.shoeUid)||{shoe:"none"}).shoe==="none"?"barefoot":SHOES[(state.inventory.find(p=>p.uid===r.shoeUid)||{shoe:"trainers"}).shoe].name)}</td></tr>`;
   }).join("");
 
@@ -1950,13 +2149,36 @@ function screenRacePreview(){
       </div>
       <div class="row">
         <button data-act="auto">Auto Order</button>
+        <button data-act="autotactics">Suggest Tactics</button>
         <button class="primary" data-act="startrace">Start Relay</button>
       </div>
     </div>
   </div>
   <div class="panel">
-    <h3>Your order &mdash; suitability for this course</h3>
-    <table><tr><th>Leg</th><th>Runner</th><th>Course suitability</th><th>Shoes</th></tr>${order}</table>
+    <div class="row spread">
+      <h3>Race briefing</h3>
+      <div class="row">
+        <span class="muted small">Set every runner to</span>
+        <select data-act="tacticall">
+          <option value="">&mdash; choose &mdash;</option>
+          ${TACTIC_LIST.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join("")}
+        </select>
+      </div>
+    </div>
+    <p class="muted small">Tell each runner how to race their leg. They will try &mdash; but a hard
+      tactic asks a lot, and a runner who is not built for it can get it wrong, pay the price and
+      get nothing back. The inside line is the shortest way round, so it is quicker, but that is
+      where the traffic is and you will get boxed in.</p>
+    <table><tr><th>Leg</th><th>Runner</th><th>Course suitability</th><th>Tactic</th><th>Can they do it?</th><th>Shoes</th></tr>${order}</table>
+    <div class="grid cols3" style="margin-top:10px">
+      ${TACTIC_LIST.map(t=>`<div class="panel2" style="margin:0">
+        <div class="title" style="color:var(--gold);text-transform:uppercase;font-size:11px;letter-spacing:1px">${esc(t.name)}</div>
+        <div class="small muted">${esc(t.desc)}</div>
+        <div class="small"><span class="tag">Needs ${STAT_BY_KEY[t.stat].name}</span>
+          <span class="tag ${t.risk>=0.24?"bad":(t.risk<=0.08?"good":"")}">${
+            t.risk>=0.24?"High risk":(t.risk<=0.08?"Low risk":"Some risk")}</span></div>
+      </div>`).join("")}
+    </div>
   </div>`;
 }
 
@@ -2020,6 +2242,12 @@ function screenResults(){
           <i style="width:${Math.round(st)}%;background:${st>50?"var(--green)":st>22?"var(--gold)":"var(--red)"}"></i>
         </span> <span class="statval">${Math.round(st)}</span></td>
       <td>${worst&&worst.v>0.3?`<span class="tag bad">${STAT_BY_KEY[worst.k].name} -${worst.v.toFixed(1)}s</span>`:'<span class="tag good">solid</span>'}</td>
+      <td>
+        <span class="tag ${l.exec==="good"?"good":(l.exec==="bad"?"bad":"")}">${esc(l.tacticShort||"EVEN")}</span>
+        <span class="small ${l.exec==="good"?"up":(l.exec==="bad"?"down":"muted")}">${
+          l.exec==="good"?"nailed it":(l.exec==="bad"?"went wrong":"scrappy")}</span>
+        ${l.boxedFor>12?`<span class="tag bad">boxed ${Math.round(l.boxedFor)}s</span>`:""}
+      </td>
     </tr>`;
   }).join("");
 
@@ -2048,7 +2276,8 @@ function screenResults(){
   </div>
   <div class="panel">
     <h2>Leg by leg</h2>
-    <table><tr><th>Leg</th><th>Runner</th><th>Time</th><th>Stamina left</th><th>Biggest ground/fade loss</th></tr>${legs}</table>
+    <table><tr><th>Leg</th><th>Runner</th><th>Time</th><th>Stamina left</th>
+      <th>Biggest ground/fade loss</th><th>Tactic</th></tr>${legs}</table>
   </div>
   <div class="panel center">
     ${(()=>{
@@ -2141,7 +2370,8 @@ document.addEventListener("click", e=>{
       state.screen=arg; save(); render(); break;
     case "up":        moveInOrder(+arg,-1); break;
     case "down":      moveInOrder(+arg, 1); break;
-    case "auto":      autoOrder(); break;
+    case "auto":         autoOrder(); break;
+    case "autotactics":  autoTactics(); break;
     case "train":     trainStat(arg); break;
     case "buyplot":   buyPlot(arg); break;
     case "buyshoe":   buyShoe(arg); break;
@@ -2157,9 +2387,12 @@ document.addEventListener("click", e=>{
   }
 });
 document.addEventListener("change", e=>{
-  const el=e.target.closest("[data-act='shoe']");
-  if(!el) return;
-  assignShoe(+el.dataset.arg, el.value);
+  const shoe=e.target.closest("[data-act='shoe']");
+  if(shoe){ assignShoe(+shoe.dataset.arg, shoe.value); return; }
+  const tac=e.target.closest("[data-act='tactic']");
+  if(tac){ setTactic(+tac.dataset.arg, tac.value); return; }
+  const all=e.target.closest("[data-act='tacticall']");
+  if(all && all.value){ setAllTactics(all.value); return; }
 });
 
 /* ================================================================
@@ -2183,7 +2416,8 @@ window.XCM = {
   playerHomeVenue, makeVenueFor, buildFixtures,
   startRace, finishRace, continueAfterRace, trainStat, buyPlot, buyShoe, render,
   aiOrder, orderedRunners, playerCtx, save, load, SQUAD_SIZE, STAT_KEYS,
-  autoPlayRace, autoOrder, sortedTable, ownsPlotFor, PLOTS, PLOT_BY_STAT, SHOES,
+  autoPlayRace, autoOrder, autoTactics, sortedTable, ownsPlotFor, PLOTS, PLOT_BY_STAT, SHOES,
+  TACTICS, rollExecution, tacticProfile, stepRace, setTactic, setAllTactics,
   teamAverage, startNextSeason, TIERS_LEN:TIERS.length, WEEKS_PER_SEASON,
 };
 /* === END OF PART 3 === */
