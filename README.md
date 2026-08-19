@@ -42,6 +42,19 @@ that stretch tests, how much stamina they have left, their shoes, and their kick
 heavier on the later legs, so your heavy-ground specialists are worth saving for the back end of the
 relay. That's what the running order is for (there's an **Auto Order** button that does it for you).
 
+### Home and away
+
+Every club has its own home ground, and a season's six races are one round hosted by each club — so
+one fixture a season is at home and the other five are away, on whatever the opposition runs on. The
+courses have real character and get nastier the higher you climb: the village league is parks and
+meadows, the national league is bogs that are half mud, fells that are half climbing, and exposed
+ridges where four fifths of the loop is into the wind.
+
+**Your home course is built from the terrain you have bought.** Every plot you own puts that ground
+into your own loop, so it starts as a bare flat field and turns into a proper technical course as you
+invest. And because your squad trains on that exact ground, your facility bonuses count double at
+home — the one race a season you should really fancy your chances.
+
 ### Finding out what went wrong
 
 After every race the results screen shows **where you lost time** — the seconds your squad gave away
@@ -72,8 +85,13 @@ Gains shrink as an attribute approaches 100, so you can't just max everything.
 
 Five tiers: Village Fun Run → District → County → Regional → National. A season is six races against
 the five other clubs in your league, scoring 10/8/6/4/2/1 by finishing position. Win the league and
-you're promoted with a bonus; finish bottom above the village league and you go down. Rival clubs
-improve every year, so standing still means going backwards.
+you're promoted with a bonus; finish bottom above the village league and you go down.
+
+**It gets genuinely hard.** Rival clubs improve every season, and the higher the league the harder
+they work at it, so standing still means going backwards. The village league is a stroll; the
+National League is not somewhere you expect to win. Measured over many simulated careers, a
+competent manager wins roughly 96% of village races and about 20% of national ones — reaching the
+top tier takes the better part of ten seasons, with real plateaus on the way.
 
 ## For anyone poking at the code
 
