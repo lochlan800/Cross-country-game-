@@ -1,0 +1,1984 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CROSS COUNTRY MANAGER</title>
+<style>
+/* ============================================================
+   RETRO STYLING - limited palette, chunky borders, hard shadows
+   ============================================================ */
+:root{
+  --bg:#0d1017;
+  --panel:#1a2130;
+  --panel2:#141a26;
+  --line:#39465f;
+  --line2:#28324a;
+  --ink:#d9e2f2;
+  --dim:#8493ad;
+  --gold:#f5c542;
+  --green:#5fd35f;
+  --red:#e0574a;
+  --blue:#4f9de0;
+  --mud:#7a5230;
+  --hill:#b8813c;
+  --grass:#6fb442;
+  --uneven:#9c9483;
+  --flat:#3f8f45;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"Lucida Console","DejaVu Sans Mono",Consolas,monospace;
+  font-size:13px;
+  line-height:1.45;
+  letter-spacing:.4px;
+  padding:10px;
+  -webkit-font-smoothing:none;
+}
+h1,h2,h3{margin:0 0 8px;text-transform:uppercase;letter-spacing:2px;font-weight:bold}
+h1{font-size:19px;color:var(--gold);text-shadow:2px 2px 0 #000}
+h2{font-size:15px;color:var(--gold)}
+h3{font-size:12px;color:var(--ink)}
+a{color:var(--gold)}
+
+#app{max-width:1120px;margin:0 auto}
+
+.panel{
+  background:var(--panel);
+  border:3px solid var(--line);
+  box-shadow:4px 4px 0 #000;
+  padding:10px 12px;
+  margin-bottom:12px;
+}
+.panel.tight{padding:6px 8px}
+.panel2{background:var(--panel2);border:2px solid var(--line2);padding:8px;margin-bottom:8px}
+
+/* ---- top bar ---- */
+#topbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between}
+#topbar .brand{display:flex;flex-direction:column}
+#topbar .brand small{color:var(--dim);letter-spacing:1px;text-transform:uppercase;font-size:10px}
+.stats-strip{display:flex;flex-wrap:wrap;gap:6px}
+.chip{
+  border:2px solid var(--line);background:var(--panel2);
+  padding:3px 8px;text-transform:uppercase;font-size:11px;letter-spacing:1px;
+  white-space:nowrap;
+}
+.chip b{color:var(--gold)}
+.chip.money b{color:var(--green)}
+
+/* ---- nav ---- */
+nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+button,.btn{
+  font-family:inherit;font-size:12px;letter-spacing:1px;text-transform:uppercase;
+  color:var(--ink);background:var(--panel);
+  border:3px solid var(--line);box-shadow:3px 3px 0 #000;
+  padding:6px 12px;cursor:pointer;
+}
+button:hover:not(:disabled){background:var(--gold);color:#000;border-color:var(--gold)}
+button:active:not(:disabled){transform:translate(3px,3px);box-shadow:0 0 0 #000}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.on{background:var(--gold);color:#000;border-color:#fff}
+button.primary{border-color:var(--green);color:var(--green)}
+button.primary:hover:not(:disabled){background:var(--green);color:#000}
+button.small{padding:2px 6px;font-size:11px;border-width:2px;box-shadow:2px 2px 0 #000}
+button.danger{border-color:var(--red);color:var(--red)}
+button.danger:hover:not(:disabled){background:var(--red);color:#000}
+
+/* ---- tables ---- */
+table{border-collapse:collapse;width:100%;font-size:12px}
+th{
+  text-align:left;text-transform:uppercase;font-size:10px;letter-spacing:1px;
+  color:var(--dim);border-bottom:2px solid var(--line);padding:4px 5px;white-space:nowrap;
+}
+td{padding:3px 5px;border-bottom:1px solid var(--line2);vertical-align:middle}
+td.runner{white-space:nowrap}
+tr.me td{background:#26304a}
+tr.me td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+
+/* ---- stat pips ---- */
+.pips{display:inline-flex;gap:1px;vertical-align:middle}
+.pip{width:6px;height:11px;background:#2b3448;border:1px solid #000}
+.pip.on{background:var(--green)}
+.pip.mid{background:var(--gold)}
+.pip.low{background:var(--red)}
+.statval{display:inline-block;min-width:22px;text-align:right;color:var(--dim);font-size:11px}
+.up{color:var(--green)}
+.down{color:var(--red)}
+
+/* ---- grid helpers ---- */
+.grid{display:grid;gap:10px}
+.cols2{grid-template-columns:1fr 1fr}
+.cols3{grid-template-columns:repeat(3,1fr)}
+@media(max-width:820px){.cols2,.cols3{grid-template-columns:1fr}}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.spread{justify-content:space-between}
+.muted{color:var(--dim)}
+.small{font-size:11px}
+.right{text-align:right}
+.center{text-align:center}
+
+/* ---- shop / training cards ---- */
+.card{
+  border:2px solid var(--line2);background:var(--panel2);padding:8px;
+  display:flex;flex-direction:column;gap:6px;
+}
+.card.owned{border-color:var(--green)}
+.card.locked{opacity:.75}
+.card .title{text-transform:uppercase;letter-spacing:1px;color:var(--gold);font-size:12px}
+.price{color:var(--green);font-weight:bold}
+.tag{
+  display:inline-block;border:1px solid var(--line);padding:0 4px;font-size:10px;
+  text-transform:uppercase;letter-spacing:1px;color:var(--dim);
+}
+.tag.good{color:var(--green);border-color:var(--green)}
+.tag.bad{color:var(--red);border-color:var(--red)}
+
+/* ---- canvas ---- */
+#raceWrap{background:#000;border:3px solid var(--line);box-shadow:4px 4px 0 #000;padding:0;line-height:0}
+canvas{
+  display:block;width:100%;height:auto;
+  image-rendering:pixelated;image-rendering:crisp-edges;
+}
+
+/* ---- analysis bars ---- */
+.lossrow{display:flex;align-items:center;gap:6px;margin-bottom:3px}
+.lossname{width:96px;text-transform:uppercase;font-size:11px;letter-spacing:1px}
+.lossbar{flex:1;height:12px;background:#222a3c;border:1px solid #000;position:relative}
+.lossbar i{display:block;height:100%;background:var(--red)}
+.lossbar i.gain{background:var(--green)}
+.lossnum{width:56px;text-align:right;font-size:11px;color:var(--dim)}
+
+.terrainkey{display:flex;gap:8px;flex-wrap:wrap;font-size:10px;text-transform:uppercase;letter-spacing:1px}
+.terrainkey span{display:flex;align-items:center;gap:4px}
+.swatch{width:10px;height:10px;border:1px solid #000;display:inline-block}
+
+.banner{
+  border:3px solid var(--gold);background:#241f0d;color:var(--gold);
+  padding:8px 10px;margin-bottom:10px;text-transform:uppercase;letter-spacing:1px;
+  box-shadow:4px 4px 0 #000;
+}
+.banner.bad{border-color:var(--red);background:#2a1414;color:var(--red)}
+.banner.good{border-color:var(--green);background:#12240f;color:var(--green)}
+
+select{
+  font-family:inherit;font-size:11px;background:var(--panel2);color:var(--ink);
+  border:2px solid var(--line);padding:2px 4px;
+}
+.hidden{display:none !important}
+.blink{animation:bl 1s steps(2,end) infinite}
+@keyframes bl{50%{opacity:.35}}
+footer{color:var(--dim);font-size:10px;text-align:center;padding:8px 0 20px;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="panel tight" id="topbar">
+    <div class="brand">
+      <h1 id="clubName">CROSS COUNTRY MANAGER</h1>
+      <small id="clubSub">retro relay league</small>
+    </div>
+    <div class="stats-strip" id="strip"></div>
+  </div>
+
+  <nav id="nav"></nav>
+  <div id="screen"></div>
+
+  <footer>CROSS COUNTRY MANAGER &mdash; SAVES AUTOMATICALLY TO THIS BROWSER</footer>
+</div>
+
+<script>
+"use strict";
+/* ================================================================
+   CROSS COUNTRY MANAGER
+   A retro pixel-art cross country team manager.
+   Everything lives in this one file: DATA / SIM / RENDER / UI / SAVE
+   ================================================================ */
+
+/* ================================================================
+   SECTION 1 : UTILITIES
+   ================================================================ */
+const clamp = (v,a,b)=>v<a?a:(v>b?b:v);
+const rnd = (a=1,b=0)=>b+Math.random()*(a-b);
+const pick = arr=>arr[(Math.random()*arr.length)|0];
+const ri  = (a,b)=>a+((Math.random()*(b-a+1))|0);
+
+// seeded RNG so a named course always generates the same shape
+function mulberry32(a){
+  return function(){
+    a|=0; a=a+0x6D2B79F5|0;
+    let t=Math.imul(a^a>>>15,1|a);
+    t=t+Math.imul(t^t>>>7,61|t)^t;
+    return ((t^t>>>14)>>>0)/4294967296;
+  };
+}
+// roughly-normal distribution, mean 0, sd 1
+function gauss(){
+  let u=0,v=0;
+  while(u===0)u=Math.random();
+  while(v===0)v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+function shuffle(arr,rng=Math.random){
+  for(let i=arr.length-1;i>0;i--){
+    const j=(rng()*(i+1))|0;
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+  return arr;
+}
+function fmtTime(s){
+  if(!isFinite(s))return "--:--";
+  const m=Math.floor(s/60), sec=s-m*60;
+  return m+":"+(sec<10?"0":"")+sec.toFixed(1);
+}
+function fmtGap(s){
+  if(s<=0.05)return "";
+  return "+"+s.toFixed(1);
+}
+function money(n){ return "£"+Math.round(n).toLocaleString("en-GB"); }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function ordinal(n){
+  const s=["th","st","nd","rd"], v=n%100;
+  return n+(s[(v-20)%10]||s[v]||s[0]);
+}
+
+/* ================================================================
+   SECTION 2 : DATA
+   ================================================================ */
+
+/* ---- the eight running attributes ---------------------------- */
+const STATS = [
+  {key:"fitness",   name:"Fitness",     short:"FIT", desc:"How long they hold pace before fading"},
+  {key:"speed",     name:"Speed",       short:"SPD", desc:"Flat-out pace on good ground"},
+  {key:"sprint",    name:"Sprint",      short:"SPR", desc:"Kick into the handover / finish"},
+  {key:"hills",     name:"Hills",       short:"HIL", desc:"Climbing strength"},
+  {key:"mud",       name:"Mud",         short:"MUD", desc:"Grip and drive in heavy ground"},
+  {key:"longGrass", name:"Long Grass",  short:"GRS", desc:"Lifting the knees through deep grass"},
+  {key:"wind",      name:"Wind",        short:"WND", desc:"Holding form into a headwind"},
+  {key:"uneven",    name:"Uneven",      short:"UNV", desc:"Footing on rough, rutted ground"},
+];
+const STAT_KEYS = STATS.map(s=>s.key);
+const STAT_BY_KEY = {}; STATS.forEach(s=>STAT_BY_KEY[s.key]=s);
+
+/* ---- terrain types ------------------------------------------- */
+const TERRAIN = {
+  flat:      {name:"Firm Grass", stat:"speed",     col:"#3f8f45", edge:"#2b6330", drain:1.00},
+  hill:      {name:"Hill",       stat:"hills",     col:"#b8813c", edge:"#7d5624", drain:1.42},
+  mud:       {name:"Mud",        stat:"mud",       col:"#7a5230", edge:"#4f341c", drain:1.34},
+  longGrass: {name:"Long Grass", stat:"longGrass", col:"#6fb442", edge:"#487a2b", drain:1.22},
+  uneven:    {name:"Uneven",     stat:"uneven",    col:"#9c9483", edge:"#6a6458", drain:1.16},
+};
+const TERRAIN_KEYS = Object.keys(TERRAIN);
+
+/* ---- runner names -------------------------------------------- */
+const FIRST = ["Alfie","Bobby","Callum","Danny","Elliot","Fraser","George","Harvey","Isaac","Jonah",
+  "Kieran","Liam","Milo","Nathan","Ollie","Patrick","Quinn","Reece","Sam","Toby","Umar","Vinnie",
+  "Wesley","Zac","Archie","Bertie","Corey","Dexter","Eli","Finn","Gethin","Hugo","Ivan","Jamie",
+  "Kai","Louis","Mason","Noah","Otis","Percy","Rory","Seth","Theo","Wilf","Yusuf","Casey","Robin",
+  "Ashley","Jesse","Morgan","Riley","Sasha","Frankie","Charlie","Alex","Jordan","Sidney","Bailey"];
+const LAST = ["Ashworth","Bramley","Cotterill","Draycott","Ellwood","Fenwick","Gledhill","Hartley",
+  "Ingham","Jessop","Kirkbride","Lomax","Marsden","Naylor","Oakden","Pemberton","Quarmby","Radcliffe",
+  "Sowerby","Thwaite","Underhill","Vance","Wolstenholme","Yardley","Barlow","Crompton","Dinsdale",
+  "Eastwood","Fairhurst","Garside","Hebden","Illingworth","Jowett","Kershaw","Longbottom","Micklewaite",
+  "Netherwood","Ogden","Postlethwaite","Rushworth","Stanbury","Tetlow","Whitworth","Braithwaite","Sedgwick"];
+
+/* ---- rival club names ---------------------------------------- */
+const CLUB_NAMES = [
+  ["Ashcombe Harriers","ASH","#e0574a"],
+  ["Bracken Vale AC","BRV","#4f9de0"],
+  ["Coldwell Striders","CLW","#9b6fd4"],
+  ["Dunmere Runners","DUN","#48c2a8"],
+  ["Elmsworth Pacers","ELM","#e08a3c"],
+  ["Fellbeck Athletic","FEL","#d45a9b"],
+  ["Grimsdale Trail Club","GRM","#7fae3f"],
+  ["Hollowbrook AC","HOL","#5f6fd8"],
+  ["Ironbridge Harriers","IRN","#c0c6d2"],
+  ["Jarrow Moor AC","JAR","#3fb0c9"],
+  ["Kestrel Fell Runners","KES","#d6b23c"],
+  ["Larkspur AC","LRK","#8fd45a"],
+  ["Mosswood Striders","MOS","#4bb56b"],
+  ["Northgate Harriers","NRG","#e0645f"],
+  ["Oakhampton AC","OAK","#a67c4a"],
+  ["Pennine Crag Club","PEN","#7d8ce0"],
+  ["Quarrybank Runners","QRY","#b3b0a0"],
+  ["Redmoor Athletic","RED","#e04f4f"],
+  ["Stonegate Harriers","STO","#8ea0b8"],
+  ["Thornfield AC","THN","#5ad4c4"],
+  ["Uppermill Striders","UPP","#d49a5a"],
+  ["Verity Park AC","VER","#c47fd4"],
+  ["Wickden Harriers","WCK","#5fb0e0"],
+  ["Yarrowdale AC","YAR","#9fd44a"],
+  ["Blackmoss Runners","BLK","#7a8090"],
+  ["Cairnhead AC","CRN","#4fd48a"],
+  ["Ditchling Harriers","DIT","#e0b04a"],
+  ["Ewbank Athletic","EWB","#6f8fd4"],
+  ["Foxhollow AC","FOX","#e07a3c"],
+  ["Gallowtree Striders","GAL","#b45ad4"],
+];
+
+/* ---- venues (race courses) ----------------------------------- */
+/* mix = how many of the 16 segments are each terrain
+   exposure = fraction of the loop that is wind-exposed         */
+const VENUES = [
+  {name:"Meadow Park",        code:"MDW", len:1300, tiers:[0,1],   mix:{flat:11,longGrass:3,mud:1,uneven:1},                exposure:0.10},
+  {name:"Miller's Field",     code:"MIL", len:1350, tiers:[0,1],   mix:{flat:8,longGrass:5,mud:2,hill:1},                   exposure:0.15},
+  {name:"Parson's Green",     code:"PRS", len:1250, tiers:[0],     mix:{flat:10,hill:2,longGrass:3,uneven:1},               exposure:0.05},
+  {name:"Blackthorn Common",  code:"BLC", len:1500, tiers:[1,2],   mix:{flat:5,mud:6,longGrass:3,uneven:2},                 exposure:0.20},
+  {name:"Cinder Hill",        code:"CDR", len:1450, tiers:[1,2],   mix:{flat:5,hill:6,uneven:3,mud:2},                      exposure:0.25},
+  {name:"Harrow Downs",       code:"HRW", len:1550, tiers:[1,2,3], mix:{flat:6,hill:4,longGrass:4,uneven:2},                exposure:0.45},
+  {name:"Stonewold Ridge",    code:"STN", len:1600, tiers:[2,3],   mix:{flat:4,uneven:6,hill:4,mud:2},                      exposure:0.40},
+  {name:"Ferndale Marsh",     code:"FRN", len:1600, tiers:[2,3],   mix:{flat:3,mud:7,longGrass:5,uneven:1},                 exposure:0.20},
+  {name:"Crag End",           code:"CRG", len:1700, tiers:[3,4],   mix:{flat:3,hill:6,uneven:5,mud:2},                      exposure:0.35},
+  {name:"Kestrel Moor",       code:"KSM", len:1750, tiers:[3,4],   mix:{flat:3,mud:4,hill:3,longGrass:3,uneven:3},          exposure:0.55},
+  {name:"Tarnbeck Nationals", code:"TRN", len:1800, tiers:[4],     mix:{flat:4,mud:4,hill:4,uneven:2,longGrass:2},          exposure:0.45},
+  {name:"Wraithfell",         code:"WRF", len:1800, tiers:[4],     mix:{flat:2,hill:5,mud:4,uneven:4,longGrass:1},          exposure:0.60},
+];
+
+/* ---- league structure ---------------------------------------- */
+const TIERS = [
+  {name:"Village Fun Run League", short:"VILLAGE",  base:34, spread:9,  prize:1.0},
+  {name:"District League",        short:"DISTRICT", base:46, spread:9,  prize:2.0},
+  {name:"County League",          short:"COUNTY",   base:57, spread:8,  prize:3.4},
+  {name:"Regional League",        short:"REGIONAL", base:68, spread:8,  prize:5.0},
+  {name:"National League",        short:"NATIONAL", base:78, spread:7,  prize:7.0},
+];
+const TEAMS_PER_LEAGUE = 6;
+const WEEKS_PER_SEASON = 6;
+const SQUAD_SIZE = 10;
+const TRAINING_SLOTS = 3;
+const POINTS = [10,8,6,4,2,1];              // points by finishing position
+const RACE_PRIZE = [140,90,55,30,15,0];     // base prize by position (x tier multiplier)
+const LEAGUE_PRIZE = [700,380,200,110,60,0];// end of season bonus by final position
+
+/* ---- terrain plots you can buy (training facilities) ---------- */
+const PLOTS = [
+  {id:"track",   stat:"speed",     name:"Cinder Track",      cost:0,    desc:"A worn old track behind the clubhouse.",       start:true},
+  {id:"gym",     stat:"fitness",   name:"Fitness Trail",     cost:0,    desc:"A lapped trail for endurance work.",           start:true},
+  {id:"grass",   stat:"longGrass", name:"Long Grass Meadow", cost:450,  desc:"Unmown meadow. Teaches high knees."},
+  {id:"mudpit",  stat:"mud",       name:"Mud Pit",           cost:600,  desc:"A churned, waterlogged field."},
+  {id:"sprint",  stat:"sprint",    name:"Sprint Straight",   cost:700,  desc:"A short flat-out finishing straight."},
+  {id:"hills",   stat:"hills",     name:"Hill Circuit",      cost:850,  desc:"A brutal repeating climb."},
+  {id:"rough",   stat:"uneven",    name:"Uneven Trail",      cost:950,  desc:"Rutted, rock-strewn, ankle-testing."},
+  {id:"ridge",   stat:"wind",      name:"Exposed Ridge",     cost:1100, desc:"Nowhere to hide from the wind."},
+];
+const PLOT_BY_STAT = {}; PLOTS.forEach(p=>PLOT_BY_STAT[p.stat]=p);
+const FACILITY_BONUS = 3;   // permanent stat bonus for owning the plot
+
+/* ---- shoes ---------------------------------------------------- */
+const SHOES = {
+  trainers:  {id:"trainers",  name:"Old Trainers",   cost:0,   mods:{}},
+  flats:     {id:"flats",     name:"Road Flats",     cost:180, mods:{speed:7,sprint:4,mud:-6,uneven:-3}},
+  xc:        {id:"xc",        name:"XC Spikes",      cost:340, mods:{mud:5,longGrass:6,uneven:3}},
+  grassers:  {id:"grassers",  name:"Grass Spikes",   cost:400, mods:{longGrass:12,uneven:2,mud:2}},
+  claws:     {id:"claws",     name:"Mud Claws",      cost:520, mods:{mud:13,uneven:5,speed:-3}},
+  fell:      {id:"fell",      name:"Fell Shoes",     cost:620, mods:{hills:11,uneven:9,mud:4,speed:-2}},
+  carbon:    {id:"carbon",    name:"Carbon Racers",  cost:1050,mods:{speed:11,sprint:10,mud:-7,uneven:-4}},
+  allround:  {id:"allround",  name:"Terrain Elites", cost:1400,mods:{mud:6,hills:6,uneven:6,longGrass:6,wind:3}},
+};
+const SHOE_LIST = Object.values(SHOES);
+
+/* ---- simulation constants ------------------------------------ */
+/* Balance note: speed and fitness apply to every metre of the course,
+   while a terrain stat only applies on its own segments. So the speed
+   and fitness ranges are deliberately narrow and the terrain range is
+   wide - that way a mud specialist on a muddy course beats a runner
+   who is simply "fast", and buying terrain is worth the money.       */
+const BASE_SPEED = 5.15;   // m/s reference pace
+const STAM_DRAIN = 0.200;  // stamina per second at fitness 50 on firm grass
+const B_MIN = 0.92, B_RANGE = 0.16;   // speed stat -> global pace factor
+const T_MIN = 0.72, T_RANGE = 0.56;   // terrain stat -> terrain factor
+const W_MIN = 0.80, W_RANGE = 0.24;   // wind stat -> headwind factor
+const FA_FLOOR = 0.78, FA_KNEE = 60;  // fatigue curve
+const FIT_DRAIN_MIN = 1.45, FIT_DRAIN_RANGE = 0.65; // fitness -> stamina drain
+const SPRINT_GAIN = 0.16;             // max kick bonus
+const SPRINT_ZONE = 0.90;             // last 10% of a leg
+
+/* The course cuts up as sixty runners churn through it. Soft ground
+   gets progressively heavier on the later legs, so who you send out
+   last genuinely matters. Value = how much of the terrain advantage
+   is worn away by leg 10.                                          */
+const CHURN = {mud:0.22, longGrass:0.14, uneven:0.11, hill:0.07, flat:0.0};
+
+/* ---- 5x7 bitmap font for the canvas HUD ---------------------- */
+const FONT = {
+  "A":".###./#...#/#...#/#####/#...#/#...#/#...#",
+  "B":"####./#...#/####./#...#/#...#/#...#/####.",
+  "C":".###./#...#/#..../#..../#..../#...#/.###.",
+  "D":"####./#...#/#...#/#...#/#...#/#...#/####.",
+  "E":"#####/#..../#..../####./#..../#..../#####",
+  "F":"#####/#..../#..../####./#..../#..../#....",
+  "G":".###./#...#/#..../#.###/#...#/#...#/.###.",
+  "H":"#...#/#...#/#...#/#####/#...#/#...#/#...#",
+  "I":"#####/..#../..#../..#../..#../..#../#####",
+  "J":"..###/...#./...#./...#./...#./#..#./.##..",
+  "K":"#...#/#..#./#.#../##.../#.#../#..#./#...#",
+  "L":"#..../#..../#..../#..../#..../#..../#####",
+  "M":"#...#/##.##/#.#.#/#...#/#...#/#...#/#...#",
+  "N":"#...#/##..#/#.#.#/#..##/#...#/#...#/#...#",
+  "O":".###./#...#/#...#/#...#/#...#/#...#/.###.",
+  "P":"####./#...#/#...#/####./#..../#..../#....",
+  "Q":".###./#...#/#...#/#...#/#.#.#/#..#./.##.#",
+  "R":"####./#...#/#...#/####./#.#../#..#./#...#",
+  "S":".####/#..../#..../.###./....#/....#/####.",
+  "T":"#####/..#../..#../..#../..#../..#../..#..",
+  "U":"#...#/#...#/#...#/#...#/#...#/#...#/.###.",
+  "V":"#...#/#...#/#...#/#...#/#...#/.#.#./..#..",
+  "W":"#...#/#...#/#...#/#.#.#/#.#.#/##.##/#...#",
+  "X":"#...#/#...#/.#.#./..#../.#.#./#...#/#...#",
+  "Y":"#...#/#...#/.#.#./..#../..#../..#../..#..",
+  "Z":"#####/....#/...#./..#../.#.../#..../#####",
+  "0":".###./#...#/#..##/#.#.#/##..#/#...#/.###.",
+  "1":"..#../.##../..#../..#../..#../..#../.###.",
+  "2":".###./#...#/....#/...#./..#../.#.../#####",
+  "3":"####./....#/....#/.###./....#/....#/####.",
+  "4":"...#./..##./.#.#./#..#./#####/...#./...#.",
+  "5":"#####/#..../####./....#/....#/#...#/.###.",
+  "6":"..##./.#.../#..../####./#...#/#...#/.###.",
+  "7":"#####/....#/...#./..#../.#.../.#.../.#...",
+  "8":".###./#...#/#...#/.###./#...#/#...#/.###.",
+  "9":".###./#...#/#...#/.####/....#/...#./.##..",
+  " ":"...../...../...../...../...../...../.....",
+  ":":"...../..#../..#../...../..#../..#../.....",
+  "-":"...../...../...../.###./...../...../.....",
+  "/":"....#/...#./...#./..#../.#.../.#.../#....",
+  ".":"...../...../...../...../...../..##./..##.",
+  ",":"...../...../...../...../..##./..##./.#...",
+  "'":"..#../..#../...../...../...../...../.....",
+  "!":"..#../..#../..#../..#../..#../...../..#..",
+  "+":"...../..#../..#../#####/..#../..#../.....",
+  "%":"#...#/#..#./...#./..#../.#.../#..#./#...#",
+  ">":".#.../..#../...#./....#/...#./..#../.#...",
+  "<":"...#./..#../.#.../#..../.#.../..#../...#.",
+  "(":"...#./..#../.#.../.#.../.#.../..#../...#.",
+  ")":".#.../..#../...#./...#./...#./..#../.#...",
+  "*":"...../#.#.#/.###./#####/.###./#.#.#/.....",
+  "£":"..##./.#..#/.#.../###../.#.../.#..#/##.##",
+};
+// pre-parse glyphs into arrays of [x,y] pixels
+const GLYPHS = {};
+for(const ch in FONT){
+  const rows = FONT[ch].split("/");
+  const px=[];
+  for(let y=0;y<rows.length;y++)
+    for(let x=0;x<rows[y].length;x++)
+      if(rows[y][x]==="#")px.push([x,y]);
+  GLYPHS[ch]=px;
+}
+
+/* ---- runner sprite : 5 wide x 8 tall, 4 frame run cycle ------
+   . = empty   H = head/skin   B = body (team colour)   L = legs   */
+const SPRITE_FRAMES = [
+  ".HH../.HH../BBB../.B.../L.L../L..L./...../.....",
+  ".HH../.HH../BBB../.B.../.LL../.L.L./...../.....",
+  ".HH../.HH../BBB../.B.../.L.../L.L../...../.....",
+  ".HH../.HH../BBB../.B.../.LL../L.L../...../.....",
+];
+const SPRITES = SPRITE_FRAMES.map(f=>{
+  const rows=f.split("/"); const px=[];
+  for(let y=0;y<rows.length;y++)
+    for(let x=0;x<rows[y].length;x++)
+      if(rows[y][x]!==".")px.push([x,y,rows[y][x]]);
+  return px;
+});
+
+/* ================================================================
+   SECTION 3 : GENERATORS
+   ================================================================ */
+
+let _uid = 1;
+const uid = ()=>_uid++;
+
+/* Runner archetypes so a starting squad has real character */
+const ARCHETYPES = [
+  {name:"Mudlark",      up:["mud","uneven"],        down:["speed","sprint"]},
+  {name:"Track Speed",  up:["speed","sprint"],      down:["mud","uneven"]},
+  {name:"Climber",      up:["hills","fitness"],     down:["sprint","speed"]},
+  {name:"Grass Merchant",up:["longGrass","mud"],    down:["hills","wind"]},
+  {name:"Grinder",      up:["fitness","wind"],      down:["sprint","speed"]},
+  {name:"Kicker",       up:["sprint","speed"],      down:["fitness","hills"]},
+  {name:"Rough Rider",  up:["uneven","hills"],      down:["speed","longGrass"]},
+  {name:"All Rounder",  up:[],                      down:[]},
+  {name:"Wind Cheater", up:["wind","fitness"],      down:["mud","uneven"]},
+  {name:"Front Runner", up:["speed","fitness"],     down:["uneven","mud"]},
+];
+
+function makeRunner(mean, spread, archetype, usedNames){
+  const stats={};
+  for(const k of STAT_KEYS){
+    let v = mean + gauss()*spread;
+    if(archetype){
+      if(archetype.up.includes(k))   v += 14 + rnd(8);
+      if(archetype.down.includes(k)) v -= 12 + rnd(8);
+    }
+    stats[k]=clamp(Math.round(v),5,99);
+  }
+  // no two runners in the same squad share a surname
+  let first=pick(FIRST), last=pick(LAST), tries=0;
+  while(usedNames && usedNames.has(last) && tries++<40) last=pick(LAST);
+  if(usedNames) usedNames.add(last);
+  return {
+    id:uid(),
+    name: first+" "+last,
+    stats,
+    shoeUid:null,          // which pair of shoes from the inventory
+    age: ri(17,29),
+    archetype: archetype?archetype.name:"Runner",
+  };
+}
+
+function makeSquad(mean, spread, withArchetypes){
+  const arcs = withArchetypes ? shuffle(ARCHETYPES.slice()).slice(0,SQUAD_SIZE) : [];
+  const squad=[], used=new Set();
+  for(let i=0;i<SQUAD_SIZE;i++) squad.push(makeRunner(mean,spread, withArchetypes?arcs[i]:null, used));
+  return squad;
+}
+
+/* ---- course generation ---------------------------------------
+   Builds a closed loop path from a seeded wobbly ellipse, splits
+   it into 16 terrain segments, and records cumulative distances. */
+function buildCourse(venue, seed){
+  const rng = mulberry32(seed);
+  const N = 13;                     // control points
+  const ctrl=[];
+  for(let i=0;i<N;i++){
+    const a = (i/N)*Math.PI*2;
+    const r = 0.60 + rng()*0.40;
+    ctrl.push({x:Math.cos(a)*r, y:Math.sin(a)*r*0.74});
+  }
+  // Catmull-Rom sampling for a smooth closed loop
+  const pts=[];
+  const STEPS=16;
+  for(let i=0;i<N;i++){
+    const p0=ctrl[(i-1+N)%N],p1=ctrl[i],p2=ctrl[(i+1)%N],p3=ctrl[(i+2)%N];
+    for(let s=0;s<STEPS;s++){
+      const t=s/STEPS, t2=t*t, t3=t2*t;
+      pts.push({
+        x:0.5*((2*p1.x)+(-p0.x+p2.x)*t+(2*p0.x-5*p1.x+4*p2.x-p3.x)*t2+(-p0.x+3*p1.x-3*p2.x+p3.x)*t3),
+        y:0.5*((2*p1.y)+(-p0.y+p2.y)*t+(2*p0.y-5*p1.y+4*p2.y-p3.y)*t2+(-p0.y+3*p1.y-3*p2.y+p3.y)*t3),
+      });
+    }
+  }
+  // cumulative length in normalised units
+  const cum=[0];
+  for(let i=1;i<=pts.length;i++){
+    const a=pts[i-1], b=pts[i%pts.length];
+    cum.push(cum[i-1]+Math.hypot(b.x-a.x,b.y-a.y));
+  }
+  const totalNorm = cum[pts.length];
+
+  // 16 terrain segments from the venue's mix
+  const SEGS=16;
+  const bag=[];
+  for(const k in venue.mix) for(let i=0;i<venue.mix[k];i++) bag.push(k);
+  while(bag.length<SEGS) bag.push("flat");
+  bag.length=SEGS;
+  shuffle(bag,rng);
+  // group identical neighbours a little so it reads as real terrain
+  for(let pass=0;pass<2;pass++){
+    for(let i=1;i<SEGS-1;i++){
+      if(bag[i]!==bag[i-1] && bag[i+1]===bag[i-1] && rng()<0.6){
+        [bag[i],bag[i+1]]=[bag[i+1],bag[i]];
+      }
+    }
+  }
+  const expCount = Math.round(venue.exposure*SEGS);
+  const expStart = (rng()*SEGS)|0;
+  const segments=[];
+  for(let i=0;i<SEGS;i++){
+    let exposed=false;
+    for(let j=0;j<expCount;j++) if((expStart+j)%SEGS===i) exposed=true;
+    segments.push({terrain:bag[i], exposed, from:i/SEGS, to:(i+1)/SEGS});
+  }
+
+  return {
+    venue:venue.name, code:venue.code, lengthM:venue.len,
+    pts, cum, totalNorm, segments,
+    segAt(frac){
+      let f=frac%1; if(f<0)f+=1;
+      return segments[Math.min(SEGS-1,(f*SEGS)|0)];
+    },
+    // position on the loop for a 0..1 fraction of a lap
+    posAt(frac){
+      let f=frac%1; if(f<0)f+=1;
+      const target=f*totalNorm;
+      let lo=0,hi=pts.length;
+      while(lo<hi){ const mid=(lo+hi)>>1; if(cum[mid]<target)lo=mid+1; else hi=mid; }
+      const i=clamp(lo-1,0,pts.length-1);
+      const a=pts[i], b=pts[(i+1)%pts.length];
+      const segLen=cum[i+1]-cum[i] || 1e-6;
+      const t=clamp((target-cum[i])/segLen,0,1);
+      return {x:a.x+(b.x-a.x)*t, y:a.y+(b.y-a.y)*t, ang:Math.atan2(b.y-a.y,b.x-a.x)};
+    },
+    mixSummary(){
+      const c={};
+      segments.forEach(s=>{ c[s.terrain]=(c[s.terrain]||0)+1; });
+      return c;
+    },
+    exposedCount(){ return segments.filter(s=>s.exposed).length; }
+  };
+}
+
+function venuesForTier(tier){
+  const list = VENUES.filter(v=>v.tiers.includes(tier));
+  return list.length?list:VENUES.slice(0,3);
+}
+function courseForWeek(tier, season, week){
+  const list = venuesForTier(tier);
+  const v = list[(week + season*2) % list.length];
+  return buildCourse(v, hashStr(v.name)+season*97+week*13);
+}
+function hashStr(s){
+  let h=2166136261;
+  for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
+  return h>>>0;
+}
+
+/* ---- rival club generation ----------------------------------- */
+function makeRivals(tier, count, exclude){
+  const pool = CLUB_NAMES.filter(c=>!exclude.includes(c[0]));
+  shuffle(pool);
+  const t = TIERS[tier];
+  const out=[];
+  for(let i=0;i<count;i++){
+    const [name,code,col] = pool[i%pool.length];
+    // each club has its own strength offset so the table isn't flat
+    const offset = (i - (count-1)/2) * (t.spread*0.42) + gauss()*2;
+    out.push({
+      id:uid(), name, code, colour:col, isPlayer:false,
+      strength: t.base + offset,
+      runners: makeSquad(t.base+offset, t.spread*0.55, true),
+    });
+  }
+  return out;
+}
+/* ================================================================
+   SECTION 4 : RACE SIMULATION
+   ----------------------------------------------------------------
+   One runner per club is on the course at a time. When they finish
+   their lap of the loop the baton passes to the next in the order.
+   Ten legs, ten runners, one winner.
+   ================================================================ */
+
+/* Effective stats = base + shoes + owned training facilities */
+function effectiveStats(runner, ctx){
+  const eff={};
+  const shoe = ctx && ctx.shoeFor ? ctx.shoeFor(runner) : null;
+  for(const k of STAT_KEYS){
+    let v = runner.stats[k];
+    if(shoe && shoe.mods[k]) v += shoe.mods[k];
+    if(ctx && ctx.facility && ctx.facility[k]) v += ctx.facility[k];
+    eff[k] = clamp(v,1,100);
+  }
+  return eff;
+}
+
+function makeRaceRunner(runner, ctx){
+  return {
+    ref:runner,
+    name:runner.name,
+    eff:effectiveStats(runner,ctx),
+    form: 1 + gauss()*0.028,          // how they've turned up on the day
+    phase: Math.random()*6.283,
+    lost:{},                          // seconds lost, by stat key
+    sprintGain:0,
+    staminaEnd:100,
+    legTime:0,
+    ran:false,
+  };
+}
+
+function newRace(course, entries){
+  // entries: [{club, order:[runner...], ctx}]
+  const R = {
+    course, t:0, over:false, finishOrder:[], teams:[],
+  };
+  entries.forEach(e=>{
+    R.teams.push({
+      club:e.club,
+      name:e.club.name, code:e.club.code, colour:e.club.colour,
+      isPlayer:!!e.club.isPlayer,
+      runners:e.order.map(r=>makeRaceRunner(r,e.ctx)),
+      leg:0, dist:0, total:0, stamina:100, lastSpeed:BASE_SPEED,
+      legStart:0, done:false, finishTime:0, place:0, handover:-99,
+    });
+  });
+  return R;
+}
+
+function stepRace(R, dt){
+  if(R.over) return;
+  R.t += dt;
+  const L = R.course.lengthM;
+
+  for(const tm of R.teams){
+    if(tm.done) continue;
+    const r = tm.runners[tm.leg];
+    r.ran = true;
+    const frac = tm.dist / L;
+    const seg = R.course.segAt(frac);
+
+    // --- the speed formula -------------------------------------
+    const B = B_MIN + B_RANGE*(r.eff.speed/100);          // general pace
+    let T = 1, tstat = null, Tmax = 1;
+    if(seg.terrain !== "flat"){
+      tstat = TERRAIN[seg.terrain].stat;
+      // ground churns up leg by leg, eating into the terrain advantage
+      const churn = 1 - (CHURN[seg.terrain]||0)*(tm.leg/(SQUAD_SIZE-1));
+      T    = T_MIN + T_RANGE*(r.eff[tstat]/100)*churn;    // terrain skill
+      Tmax = T_MIN + T_RANGE*churn;                       // same, at stat 100
+    }
+    let W = 1;
+    if(seg.exposed) W = W_MIN + W_RANGE*(r.eff.wind/100); // headwind
+    const Fa = tm.stamina>=FA_KNEE ? 1
+             : FA_FLOOR + (1-FA_FLOOR)*(tm.stamina/FA_KNEE);   // fatigue
+    let S = 1;
+    if(frac > SPRINT_ZONE)
+      S = 1 + SPRINT_GAIN*(r.eff.sprint/100)*((frac-SPRINT_ZONE)/(1-SPRINT_ZONE));
+    const wob = 1 + Math.sin(R.t*0.11 + r.phase)*0.012;   // small live variance
+
+    const v = BASE_SPEED * B * T * W * Fa * S * r.form * wob;
+    const d = v*dt;
+    const tickTime = d/v;                                 // == dt, kept explicit
+
+    // --- telemetry ------------------------------------------------
+    // Every category is measured the same way: the seconds this runner
+    // would have saved right here if that one attribute were 100.
+    if(tstat) r.lost[tstat] = (r.lost[tstat]||0) + tickTime*(1 - T/Tmax);
+    if(seg.exposed) r.lost.wind = (r.lost.wind||0) + tickTime*(1 - W/(W_MIN+W_RANGE));
+    if(Fa<1)  r.lost.fitness = (r.lost.fitness||0) + tickTime*(1-Fa);
+    r.lost.speed = (r.lost.speed||0) + tickTime*(1 - B/(B_MIN+B_RANGE));
+    if(S>1)   r.sprintGain += tickTime*(S-1);
+
+    // --- stamina ------------------------------------------------
+    const drain = STAM_DRAIN
+                * (FIT_DRAIN_MIN - FIT_DRAIN_RANGE*(r.eff.fitness/100))
+                * TERRAIN[seg.terrain].drain
+                * (seg.exposed?1.08:1);
+    tm.stamina = Math.max(0, tm.stamina - drain*dt);
+
+    tm.dist += d; tm.total += d; tm.lastSpeed = v;
+
+    // --- baton change -------------------------------------------
+    if(tm.dist >= L){
+      r.legTime = R.t - tm.legStart;
+      r.staminaEnd = tm.stamina;
+      tm.legStart = R.t;
+      tm.dist -= L;
+      tm.leg++;
+      tm.stamina = 100;
+      tm.handover = R.t;
+      if(tm.leg >= SQUAD_SIZE){
+        tm.done = true;
+        tm.finishTime = R.t;
+        tm.leg = SQUAD_SIZE-1;
+        tm.dist = L;
+        R.finishOrder.push(tm);
+        tm.place = R.finishOrder.length;
+      }
+    }
+  }
+  if(R.teams.every(t=>t.done)) R.over = true;
+}
+
+/* live standings: finished teams first, then by distance covered */
+function standings(R){
+  return R.teams.slice().sort((a,b)=>{
+    if(a.done&&b.done) return a.finishTime-b.finishTime;
+    if(a.done) return -1;
+    if(b.done) return 1;
+    return b.total-a.total;
+  });
+}
+
+/* run the whole race with no animation (used for balance testing) */
+function simulateToEnd(R, dt=0.25){
+  let guard=0;
+  while(!R.over && guard++ < 400000) stepRace(R,dt);
+  return R;
+}
+
+/* ---- squad-wide analysis of a finished race ------------------- */
+function analyseTeam(tm){
+  const lost={}; STAT_KEYS.forEach(k=>lost[k]=0);
+  let sprintGain=0, emptyLegs=0, worstBy={};
+  tm.runners.forEach(r=>{
+    for(const k in r.lost) lost[k]=(lost[k]||0)+r.lost[k];
+    sprintGain += r.sprintGain;
+    if(r.staminaEnd < 12) emptyLegs++;
+    for(const k in r.lost){
+      if(!worstBy[k] || r.lost[k] > worstBy[k].secs) worstBy[k]={runner:r, secs:r.lost[k]};
+    }
+  });
+  const avgStamina = tm.runners.reduce((a,r)=>a+r.staminaEnd,0)/tm.runners.length;
+  return {lost, sprintGain, emptyLegs, worstBy, avgStamina};
+}
+
+/* ================================================================
+   SECTION 5 : PIXEL RENDERER (top-down view of the whole loop)
+   ================================================================ */
+const CW = 400, CH = 232;          // internal canvas resolution
+const TRACK = {x:4, y:22, w:278, h:206};
+const PANEL = {x:288, y:22, w:108, h:206};
+
+function drawText(ctx, str, x, y, col, scale){
+  scale = scale||1;
+  str = String(str).toUpperCase();
+  ctx.fillStyle = col;
+  for(let i=0;i<str.length;i++){
+    const g = GLYPHS[str[i]] || GLYPHS[" "];
+    const ox = x + i*6*scale;
+    for(let p=0;p<g.length;p++) ctx.fillRect(ox+g[p][0]*scale, y+g[p][1]*scale, scale, scale);
+  }
+}
+const textW = (s,sc)=>String(s).length*6*(sc||1);
+
+function drawRunnerSprite(ctx, x, y, frame, colour, halo){
+  const px = SPRITES[frame & 3];
+  const bx = Math.round(x)-2, by = Math.round(y)-7;
+  if(halo){
+    ctx.fillStyle = halo;
+    for(let i=0;i<px.length;i++){
+      const sx=bx+px[i][0], sy=by+px[i][1];
+      ctx.fillRect(sx-1,sy,1,1); ctx.fillRect(sx+1,sy,1,1);
+      ctx.fillRect(sx,sy-1,1,1); ctx.fillRect(sx,sy+1,1,1);
+    }
+  }
+  ctx.fillStyle="#05070a"; ctx.fillRect(bx,by+7,4,1);       // shadow
+  for(let i=0;i<px.length;i++){
+    const c = px[i][2];
+    ctx.fillStyle = c==="H" ? "#eccfa4" : (c==="B" ? colour : "#252b38");
+    ctx.fillRect(bx+px[i][0], by+px[i][1], 1, 1);
+  }
+}
+
+/* work out how to fit the loop into the track area */
+function courseView(course){
+  let minX=1e9,maxX=-1e9,minY=1e9,maxY=-1e9;
+  course.pts.forEach(p=>{
+    if(p.x<minX)minX=p.x; if(p.x>maxX)maxX=p.x;
+    if(p.y<minY)minY=p.y; if(p.y>maxY)maxY=p.y;
+  });
+  const pad=14;
+  const s = Math.min((TRACK.w-pad*2)/(maxX-minX), (TRACK.h-pad*2)/(maxY-minY));
+  return {
+    s,
+    cx: TRACK.x + TRACK.w/2 - ((minX+maxX)/2)*s,
+    cy: TRACK.y + TRACK.h/2 - ((minY+maxY)/2)*s,
+  };
+}
+const proj = (view,p)=>({x:view.cx+p.x*view.s, y:view.cy+p.y*view.s});
+
+/* draw the course once into an offscreen canvas */
+function bakeCourse(course, view){
+  const off = document.createElement("canvas");
+  off.width=CW; off.height=CH;
+  const c = off.getContext("2d");
+
+  // ground
+  c.fillStyle="#131a15"; c.fillRect(0,0,CW,CH);
+  for(let i=0;i<220;i++){                      // scattered grass speckle
+    const x=(Math.random()*CW)|0, y=(Math.random()*CH)|0;
+    c.fillStyle = Math.random()<0.5?"#18231a":"#0f150f";
+    c.fillRect(x,y,1,1);
+  }
+
+  const STEPS = 520;
+  const pos=[];
+  for(let i=0;i<STEPS;i++){
+    const f=i/STEPS;
+    const p=proj(view, course.posAt(f));
+    pos.push({p, seg:course.segAt(f)});
+  }
+  // dark edging pass
+  for(let i=0;i<STEPS;i++){
+    const {p}=pos[i];
+    const t=TERRAIN[pos[i].seg.terrain];
+    c.fillStyle=t.edge;
+    c.fillRect(Math.round(p.x)-6, Math.round(p.y)-6, 13, 13);
+  }
+  // terrain surface pass
+  for(let i=0;i<STEPS;i++){
+    const {p,seg}=pos[i];
+    const t=TERRAIN[seg.terrain];
+    c.fillStyle=t.col;
+    c.fillRect(Math.round(p.x)-4, Math.round(p.y)-4, 9, 9);
+  }
+  // texture: mud splats, grass tufts, rocks, hill chevrons
+  for(let i=0;i<STEPS;i+=3){
+    const {p,seg}=pos[i];
+    const x=Math.round(p.x), y=Math.round(p.y);
+    const r=mulberry32(i*2654435761 + hashStr(course.venue))();
+    if(seg.terrain==="mud" && r<0.55){ c.fillStyle="#5d3d22"; c.fillRect(x-2+((r*4)|0), y-2+((r*7)%4|0), 2,1); }
+    else if(seg.terrain==="longGrass" && r<0.6){ c.fillStyle="#8ed15a"; c.fillRect(x-3+((r*7)|0), y-3+((r*11)%6|0),1,2); }
+    else if(seg.terrain==="uneven" && r<0.5){ c.fillStyle="#6f6a5e"; c.fillRect(x-2+((r*5)|0), y-1,2,2); }
+    else if(seg.terrain==="hill" && r<0.5){ c.fillStyle="#d3a05c"; c.fillRect(x-2,y-1,1,1); c.fillRect(x-1,y-2,1,1); c.fillRect(x,y-1,1,1); }
+    else if(seg.terrain==="flat" && r<0.18){ c.fillStyle="#4a9c4f"; c.fillRect(x-1,y,1,1); }
+  }
+  // wind markers just outside exposed sections
+  for(let i=0;i<STEPS;i+=13){
+    const seg=pos[i].seg;
+    if(!seg.exposed) continue;
+    const f=i/STEPS;
+    const a=course.posAt(f);
+    const p=proj(view,a);
+    const nx=Math.cos(a.ang+Math.PI/2), ny=Math.sin(a.ang+Math.PI/2);
+    const x=Math.round(p.x+nx*10), y=Math.round(p.y+ny*10);
+    c.fillStyle="#8fa8c9";
+    c.fillRect(x-2,y,5,1); c.fillRect(x+1,y-1,1,1); c.fillRect(x+1,y+1,1,1);
+  }
+  // start / finish line
+  const sp = course.posAt(0), spp = proj(view,sp);
+  const nx=Math.cos(sp.ang+Math.PI/2), ny=Math.sin(sp.ang+Math.PI/2);
+  for(let k=-5;k<=5;k++){
+    const x=Math.round(spp.x+nx*k), y=Math.round(spp.y+ny*k);
+    c.fillStyle = ((k+6)%2===0)?"#ffffff":"#1a1a1a";
+    c.fillRect(x-1,y-1,2,2);
+  }
+  return off;
+}
+
+/* the live race view */
+const RaceView = {
+  canvas:null, ctx:null, race:null, baked:null, view:null,
+  speed:34, running:false, raf:0, onDone:null, acc:0,
+
+  attach(canvas){
+    this.canvas=canvas;
+    canvas.width=CW; canvas.height=CH;
+    this.ctx=canvas.getContext("2d");
+    this.ctx.imageSmoothingEnabled=false;
+  },
+  setRace(race){
+    this.race=race;
+    this.view=courseView(race.course);
+    this.baked=bakeCourse(race.course,this.view);
+    this.draw();
+  },
+  start(onDone){
+    this.onDone=onDone; this.running=true; this.acc=0;
+    let last=performance.now();
+    const tick=(now)=>{
+      if(!this.running) return;
+      const real=Math.min(0.1,(now-last)/1000); last=now;
+      this.acc += real*this.speed;
+      let guard=0;
+      while(this.acc>0.25 && !this.race.over && guard++<4000){ stepRace(this.race,0.25); this.acc-=0.25; }
+      this.draw();
+      if(this.race.over){ this.running=false; if(this.onDone) this.onDone(); return; }
+      this.raf=requestAnimationFrame(tick);
+    };
+    this.raf=requestAnimationFrame(tick);
+  },
+  stop(){ this.running=false; cancelAnimationFrame(this.raf); },
+  skip(){
+    this.stop();
+    simulateToEnd(this.race);
+    this.draw();
+    if(this.onDone) this.onDone();
+  },
+
+  draw(){
+    const R=this.race, c=this.ctx;
+    if(!R||!c) return;
+    c.fillStyle="#0b0e14"; c.fillRect(0,0,CW,CH);
+    c.drawImage(this.baked,0,0);
+
+    // --- header ---------------------------------------------------
+    c.fillStyle="#151b28"; c.fillRect(0,0,CW,20);
+    c.fillStyle="#39465f"; c.fillRect(0,20,CW,1);
+    const me = R.teams.find(t=>t.isPlayer);
+    drawText(c, R.course.venue.slice(0,22), 4, 7, "#f5c542");
+    const legTxt = "LEG "+Math.min(SQUAD_SIZE,(me?me.leg+1:1))+"/"+SQUAD_SIZE;
+    drawText(c, legTxt, 190, 7, "#d9e2f2");
+    drawText(c, fmtTime(R.t), CW-4-textW(fmtTime(R.t)), 7, "#8493ad");
+
+    // --- runners on the loop -------------------------------------
+    const ordered = standings(R).slice().reverse();   // leaders drawn on top
+    ordered.forEach(tm=>{
+      const f = tm.done ? 0 : tm.dist/R.course.lengthM;
+      const a = R.course.posAt(f);
+      const p = proj(this.view, a);
+      if(tm.done){
+        // parked at the finish, waving
+        drawRunnerSprite(c, p.x+ (tm.place%2?6:-6), p.y+8, 0, tm.colour, null);
+        return;
+      }
+      // fan the clubs out across the width of the track so a tight pack
+      // reads as a pack instead of one sprite stacked on another
+      const lane = (R.teams.indexOf(tm) - (R.teams.length-1)/2) * 3.2;
+      p.x += Math.cos(a.ang+Math.PI/2)*lane;
+      p.y += Math.sin(a.ang+Math.PI/2)*lane;
+      const frame = ((tm.total/2.2)|0) & 3;
+      drawRunnerSprite(c, p.x, p.y, frame, tm.colour, tm.isPlayer?"#ffffff":null);
+      if(tm.isPlayer){
+        c.fillStyle="#f5c542";
+        const ax=Math.round(p.x), ay=Math.round(p.y)-11;
+        c.fillRect(ax-2,ay,5,1); c.fillRect(ax-1,ay+1,3,1); c.fillRect(ax,ay+2,1,1);
+      }
+      // handover flash
+      if(R.t-tm.handover < 2.5){
+        c.fillStyle= (((R.t*6)|0)%2) ? "#ffffff" : tm.colour;
+        drawText(c,"GO!",Math.round(p.x)-8,Math.round(p.y)-22,c.fillStyle);
+      }
+    });
+
+    // --- standings panel -----------------------------------------
+    c.fillStyle="#0e1320"; c.fillRect(PANEL.x-2,PANEL.y,PANEL.w+4,PANEL.h);
+    c.fillStyle="#39465f"; c.fillRect(PANEL.x-2,PANEL.y,PANEL.w+4,1);
+    c.fillRect(PANEL.x-2,PANEL.y+PANEL.h-1,PANEL.w+4,1);
+    c.fillRect(PANEL.x-2,PANEL.y,1,PANEL.h);
+    drawText(c,"STANDINGS",PANEL.x+2,PANEL.y+5,"#f5c542");
+    const st=standings(R);
+    const leader=st[0];
+    st.forEach((tm,i)=>{
+      const y=PANEL.y+18+i*16;
+      c.fillStyle = tm.isPlayer ? "#26304a" : "#121826";
+      c.fillRect(PANEL.x, y-3, PANEL.w, 14);
+      c.fillStyle=tm.colour; c.fillRect(PANEL.x+1,y-3,2,14);
+      drawText(c,(i+1)+"",PANEL.x+6,y,"#d9e2f2");
+      drawText(c,tm.code,PANEL.x+18,y,tm.isPlayer?"#f5c542":"#d9e2f2");
+      let gap="";
+      if(tm.done) gap=fmtTime(tm.finishTime);
+      else if(i===0) gap="LEAD";
+      else {
+        const behind=(leader.total-tm.total)/Math.max(1,tm.lastSpeed);
+        gap="+"+behind.toFixed(0);
+      }
+      drawText(c,gap,PANEL.x+PANEL.w-2-textW(gap),y,"#8493ad");
+      drawText(c,"L"+Math.min(SQUAD_SIZE,tm.leg+1),PANEL.x+6,y+7,"#5a6a86");
+      // little stamina bar for each club
+      const sw=40, sx=PANEL.x+30, sy=y+8;
+      c.fillStyle="#222a3c"; c.fillRect(sx,sy,sw,3);
+      const sv=tm.done?0:tm.stamina/100;
+      c.fillStyle = sv>0.5?"#5fd35f":(sv>0.22?"#f5c542":"#e0574a");
+      c.fillRect(sx,sy,Math.round(sw*sv),3);
+    });
+
+    // --- current player runner readout ---------------------------
+    if(me){
+      const r=me.runners[me.leg];
+      c.fillStyle="#0e1320"; c.fillRect(TRACK.x,CH-22,TRACK.w,20);
+      c.fillStyle="#39465f"; c.fillRect(TRACK.x,CH-22,TRACK.w,1);
+      drawText(c,("LEG "+(me.leg+1)+" "+r.name).slice(0,30),TRACK.x+4,CH-17,"#d9e2f2");
+      drawText(c,"STAM",TRACK.x+4,CH-9,"#5a6a86");
+      const bx=TRACK.x+4+textW("STAM")+4, bw=86;
+      c.fillStyle="#222a3c"; c.fillRect(bx,CH-8,bw,5);
+      const sv=me.done?0:me.stamina/100;
+      c.fillStyle = sv>0.5?"#5fd35f":(sv>0.22?"#f5c542":"#e0574a");
+      c.fillRect(bx,CH-8,Math.round(bw*sv),5);
+      const seg=R.course.segAt(me.dist/R.course.lengthM);
+      const tn=TERRAIN[seg.terrain].name+(seg.exposed?" / WIND":"");
+      drawText(c,tn,TRACK.x+TRACK.w-4-textW(tn),CH-9,TERRAIN[seg.terrain].col);
+    }
+  }
+};
+
+/* static preview of a course (used on the race preview screen) */
+function drawCoursePreview(canvas, course){
+  canvas.width=CW; canvas.height=CH;
+  const c=canvas.getContext("2d");
+  c.imageSmoothingEnabled=false;
+  const view=courseView(course);
+  c.drawImage(bakeCourse(course,view),0,0);
+  c.fillStyle="#151b28"; c.fillRect(0,0,CW,20);
+  c.fillStyle="#39465f"; c.fillRect(0,20,CW,1);
+  drawText(c,course.venue,4,7,"#f5c542");
+  const d=(course.lengthM)+"M LAP";
+  drawText(c,d,CW-4-textW(d),7,"#8493ad");
+  // the terrain breakdown is listed in HTML underneath the canvas
+}
+/* ================================================================
+   SECTION 6 : GAME STATE
+   ================================================================ */
+const SAVE_KEY = "xcmanager_save_v1";
+
+let state = null;
+let liveRace = null;       // the running race object (never saved)
+let liveCourse = null;
+
+function newGame(clubName){
+  _uid = 1;
+  const runners = makeSquad(42, 9, true);
+  const inventory = runners.map(r=>{
+    const pair = {uid:uid(), shoe:"trainers", wornBy:r.id};
+    r.shoeUid = pair.uid;
+    return pair;
+  });
+  state = {
+    v:1,
+    club:{id:uid(), name:clubName||"Hillside Harriers", code:makeCode(clubName||"Hillside Harriers"),
+          colour:"#f5c542", isPlayer:true},
+    money:500,
+    season:1, week:0, tier:0,
+    runners,
+    order: runners.map(r=>r.id),
+    plots: PLOTS.filter(p=>p.start).map(p=>p.id),
+    inventory,
+    slots: TRAINING_SLOTS,
+    rivals: [],
+    table: {},
+    fixtures: [],
+    lastResult: null,
+    seasonEnd: null,
+    screen:"squad",
+    raceState:null,
+    trainLog:[],
+    uidSeed:0,
+  };
+  state.rivals = makeRivals(state.tier, TEAMS_PER_LEAGUE-1, [state.club.name]);
+  resetTable();
+  buildFixtures();
+  save();
+}
+
+function makeCode(name){
+  const words = name.toUpperCase().replace(/[^A-Z ]/g,"").split(/\s+/).filter(Boolean);
+  if(words.length>=3) return words.slice(0,3).map(w=>w[0]).join("");
+  return ((words[0]||"CLB")+"XX").slice(0,3);
+}
+
+const allClubs = ()=>[state.club, ...state.rivals];
+const clubById = id=>allClubs().find(c=>c.id===id);
+
+function resetTable(){
+  state.table={};
+  allClubs().forEach(c=>{ state.table[c.id]={pts:0, played:0, wins:0, best:99, totalPos:0}; });
+}
+function buildFixtures(){
+  state.fixtures=[];
+  for(let w=0;w<WEEKS_PER_SEASON;w++){
+    const list=venuesForTier(state.tier);
+    const v=list[(w+state.season*2)%list.length];
+    state.fixtures.push({week:w, venue:v.name, code:v.code, result:null});
+  }
+}
+function sortedTable(){
+  return allClubs().map(c=>({club:c, ...state.table[c.id]}))
+    .sort((a,b)=> b.pts-a.pts || b.wins-a.wins || a.totalPos-b.totalPos || a.club.name.localeCompare(b.club.name));
+}
+function myTablePos(){
+  return sortedTable().findIndex(r=>r.club.id===state.club.id)+1;
+}
+
+/* ---- player context: shoes + owned training facilities -------- */
+function shoeFor(runner){
+  const inv = state.inventory.find(i=>i.uid===runner.shoeUid);
+  return inv ? SHOES[inv.shoe] : SHOES.trainers;
+}
+function facilityBonuses(){
+  const f={};
+  state.plots.forEach(id=>{
+    const p = PLOTS.find(x=>x.id===id);
+    if(p) f[p.stat]=(f[p.stat]||0)+FACILITY_BONUS;
+  });
+  return f;
+}
+function playerCtx(){ return {shoeFor, facility:facilityBonuses()}; }
+const ownsPlotFor = stat => state.plots.some(id=>{
+  const p=PLOTS.find(x=>x.id===id); return p && p.stat===stat;
+});
+const orderedRunners = ()=>state.order.map(id=>state.runners.find(r=>r.id===id)).filter(Boolean);
+const teamAverage = ()=>{
+  let t=0;
+  state.runners.forEach(r=>STAT_KEYS.forEach(k=>t+=r.stats[k]));
+  return t/(state.runners.length*STAT_KEYS.length);
+};
+
+/* ================================================================
+   SECTION 7 : GAME ACTIONS
+   ================================================================ */
+
+function trainStat(key){
+  if(state.slots<=0 || !ownsPlotFor(key)) return;
+  state.slots--;
+  let total=0;
+  state.runners.forEach(r=>{
+    const cur=r.stats[key];
+    const g = Math.max(0.15, 4.2*(1-cur/100)*(0.72+Math.random()*0.56));
+    r.stats[key]=clamp(cur+g,1,99);
+    total+=g;
+  });
+  state.trainLog.unshift({stat:key, avg:total/state.runners.length, week:state.week, season:state.season});
+  state.trainLog=state.trainLog.slice(0,12);
+  save(); render();
+}
+
+function buyPlot(id){
+  const p = PLOTS.find(x=>x.id===id);
+  if(!p || state.plots.includes(id) || state.money<p.cost) return;
+  state.money-=p.cost;
+  state.plots.push(id);
+  save(); render();
+}
+
+function buyShoe(shoeId){
+  const s = SHOES[shoeId];
+  if(!s || state.money<s.cost) return;
+  state.money-=s.cost;
+  state.inventory.push({uid:uid(), shoe:shoeId, wornBy:null});
+  save(); render();
+}
+
+function assignShoe(runnerId, pairUid){
+  const runner = state.runners.find(r=>r.id===runnerId);
+  if(!runner) return;
+  const old = state.inventory.find(i=>i.uid===runner.shoeUid);
+  if(old) old.wornBy=null;
+  if(pairUid===null || pairUid===undefined || pairUid==="none"){
+    runner.shoeUid=null;
+  }else{
+    const pair = state.inventory.find(i=>i.uid===+pairUid);
+    if(pair){
+      if(pair.wornBy){
+        const other=state.runners.find(r=>r.id===pair.wornBy);
+        if(other) other.shoeUid = old?old.uid:null;
+        if(old) old.wornBy = other?other.id:null;
+      }
+      pair.wornBy=runner.id;
+      runner.shoeUid=pair.uid;
+    }
+  }
+  save(); render();
+}
+
+function moveInOrder(runnerId, dir){
+  const i = state.order.indexOf(runnerId);
+  const j = i+dir;
+  if(i<0 || j<0 || j>=state.order.length) return;
+  [state.order[i],state.order[j]]=[state.order[j],state.order[i]];
+  save(); render();
+}
+
+/* Auto order: heavy-ground specialists run the later legs, because
+   the course cuts up as the race goes on. */
+function autoOrder(){
+  const course = currentCourse();
+  const mix = course.mixSummary();
+  const rate = r=>{
+    const eff = effectiveStats(r, playerCtx());
+    let heavy=0, w=0;
+    for(const k in mix){
+      const churn = CHURN[k]||0;
+      if(churn>0){ heavy += eff[TERRAIN[k].stat]*mix[k]*churn; w += mix[k]*churn; }
+    }
+    return w>0 ? heavy/w : eff.speed;
+  };
+  state.order = state.runners.slice().sort((a,b)=>rate(a)-rate(b)).map(r=>r.id);
+  save(); render();
+}
+
+function currentCourse(){
+  if(liveCourse && liveCourse._week===state.week && liveCourse._season===state.season) return liveCourse;
+  liveCourse = courseForWeek(state.tier, state.season, state.week);
+  liveCourse._week=state.week; liveCourse._season=state.season;
+  return liveCourse;
+}
+
+/* ---- race day ------------------------------------------------- */
+function buildRace(){
+  const course = currentCourse();
+  const entries=[{club:state.club, order:orderedRunners(), ctx:playerCtx()}];
+  state.rivals.forEach(c=>{
+    entries.push({club:c, order:aiOrder(c, course), ctx:{}});
+  });
+  return newRace(course, entries);
+}
+function startRace(){
+  liveRace = buildRace();
+  state.raceState="running";
+  render();
+}
+/* run a race with no animation at all (headless balance testing) */
+function autoPlayRace(){
+  liveRace = buildRace();
+  simulateToEnd(liveRace);
+  finishRace();
+}
+
+/* the AI uses the same heavy-ground-last logic, a bit less precisely */
+function aiOrder(club, course){
+  const mix=course.mixSummary();
+  const rate=r=>{
+    let heavy=0,w=0;
+    for(const k in mix){
+      const churn=CHURN[k]||0;
+      if(churn>0){ heavy += r.stats[TERRAIN[k].stat]*mix[k]*churn; w+=mix[k]*churn; }
+    }
+    return (w>0?heavy/w:r.stats.speed) + gauss()*7;
+  };
+  return club.runners.slice().sort((a,b)=>rate(a)-rate(b));
+}
+
+function finishRace(){
+  const R = liveRace;
+  const st = standings(R);
+  const me = R.teams.find(t=>t.isPlayer);
+  const place = st.findIndex(t=>t.isPlayer)+1;
+  const tierMul = TIERS[state.tier].prize;
+  const prize = Math.round(RACE_PRIZE[place-1]*tierMul);
+  state.money += prize;
+
+  st.forEach((tm,i)=>{
+    const rec = state.table[tm.club.id];
+    if(!rec) return;
+    rec.pts += POINTS[i]||0;
+    rec.played++;
+    rec.totalPos += (i+1);
+    if(i===0) rec.wins++;
+    if(i+1 < rec.best) rec.best=i+1;
+  });
+
+  const a = analyseTeam(me);
+  state.lastResult = {
+    venue: R.course.venue,
+    lengthM: R.course.lengthM,
+    week: state.week, season: state.season, tier: state.tier,
+    place, prize,
+    points: POINTS[place-1]||0,
+    winTime: st[0].finishTime,
+    myTime: me.finishTime,
+    positions: st.map((tm,i)=>({
+      place:i+1, name:tm.club.name, code:tm.code, colour:tm.colour,
+      isPlayer:tm.isPlayer, time:tm.finishTime, gap:tm.finishTime-st[0].finishTime,
+    })),
+    lost: a.lost,
+    sprintGain: a.sprintGain,
+    emptyLegs: a.emptyLegs,
+    avgStamina: a.avgStamina,
+    worst: Object.keys(a.worstBy).reduce((o,k)=>{
+      o[k]={name:a.worstBy[k].runner.name, secs:a.worstBy[k].secs}; return o;
+    },{}),
+    legs: me.runners.map((r,i)=>({
+      leg:i+1, name:r.name, time:r.legTime, staminaEnd:r.staminaEnd,
+      lost:Object.keys(r.lost).reduce((o,k)=>{o[k]=r.lost[k];return o;},{}),
+      sprintGain:r.sprintGain,
+    })),
+  };
+  const fx = state.fixtures[state.week];
+  if(fx) fx.result = {place, points:state.lastResult.points, prize};
+
+  state.raceState="done";
+  save(); render();
+}
+
+function continueAfterRace(){
+  state.week++;
+  state.raceState=null;
+  liveCourse=null; liveRace=null;
+  if(state.week>=WEEKS_PER_SEASON){
+    endSeason();
+  }else{
+    state.slots = TRAINING_SLOTS;
+    state.screen="training";
+  }
+  save(); render();
+}
+
+function endSeason(){
+  const table = sortedTable();
+  const pos = table.findIndex(r=>r.club.id===state.club.id)+1;
+  const prize = Math.round(LEAGUE_PRIZE[pos-1]*TIERS[state.tier].prize);
+  state.money += prize;
+
+  const promoted  = pos===1 && state.tier<TIERS.length-1;
+  const relegated = pos===TEAMS_PER_LEAGUE && state.tier>0;
+  const champion  = pos===1;
+
+  state.seasonEnd = {
+    season:state.season, tier:state.tier, pos, prize, promoted, relegated, champion,
+    table: table.map((r,i)=>({place:i+1, name:r.club.name, code:r.club.code,
+      colour:r.club.colour, pts:r.pts, wins:r.wins, isPlayer:r.club.id===state.club.id})),
+    newTier: promoted?state.tier+1:(relegated?state.tier-1:state.tier),
+  };
+  state.screen="season";
+}
+
+function startNextSeason(){
+  const se = state.seasonEnd;
+  const changed = se.newTier !== state.tier;
+  state.tier = se.newTier;
+  state.season++;
+  state.week=0;
+  state.slots=TRAINING_SLOTS;
+  state.runners.forEach(r=>r.age++);
+
+  if(changed){
+    state.rivals = makeRivals(state.tier, TEAMS_PER_LEAGUE-1, [state.club.name]);
+  }else{
+    // clubs you know get a little better every year
+    state.rivals.forEach(c=>c.runners.forEach(r=>{
+      STAT_KEYS.forEach(k=>{ r.stats[k]=clamp(r.stats[k]+2.0*(1-r.stats[k]/100),1,99); });
+    }));
+  }
+  resetTable();
+  buildFixtures();
+  state.seasonEnd=null;
+  state.lastResult=null;
+  state.screen="squad";
+  save(); render();
+}
+
+/* ---- what should the manager do next? ------------------------- */
+function recommendations(res){
+  const out=[];
+  const entries = STAT_KEYS.map(k=>({k, secs:res.lost[k]||0}))
+                           .filter(e=>e.secs>0.4)
+                           .sort((a,b)=>b.secs-a.secs);
+  entries.slice(0,3).forEach(e=>{
+    const s = STAT_BY_KEY[e.k];
+    const owns = ownsPlotFor(e.k);
+    const worst = res.worst[e.k];
+    if(owns){
+      out.push(`Your squad lost ${e.secs.toFixed(0)}s to ${s.name.toUpperCase()}. Train it${worst?` — worst was ${worst.name} (${worst.secs.toFixed(0)}s)`:""}.`);
+    }else{
+      const plot = PLOT_BY_STAT[e.k];
+      out.push(`Your squad lost ${e.secs.toFixed(0)}s to ${s.name.toUpperCase()} and you cannot train it. Buy the ${plot?plot.name.toUpperCase():"facility"} (${plot?money(plot.cost):""}).`);
+    }
+  });
+  if(res.emptyLegs>=3)
+    out.push(`${res.emptyLegs} runners finished their leg completely empty. That is a fitness problem.`);
+  if(res.sprintGain>2)
+    out.push(`Your kick into the handovers gained you ${res.sprintGain.toFixed(0)}s. Sprint training is paying off.`);
+  if(!out.length) out.push("Nothing is badly wrong. Keep training your weakest attribute.");
+  return out;
+}
+
+/* ================================================================
+   SECTION 8 : SAVE / LOAD
+   ================================================================ */
+function save(){
+  try{
+    state.uidSeed=_uid;
+    localStorage.setItem(SAVE_KEY, JSON.stringify(state));
+  }catch(e){ /* private browsing, ignore */ }
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return false;
+    const s = JSON.parse(raw);
+    if(!s || s.v!==1 || !s.runners) return false;
+    state = s;
+    _uid = s.uidSeed || 10000;
+    state.raceState = state.raceState==="running" ? null : state.raceState;
+    liveRace=null; liveCourse=null;
+    return true;
+  }catch(e){ return false; }
+}
+function wipeSave(){
+  if(!confirm("Delete your save and start a brand new club?")) return;
+  localStorage.removeItem(SAVE_KEY);
+  location.reload();
+}
+
+/* ================================================================
+   SECTION 9 : USER INTERFACE
+   ================================================================ */
+const SCREENS = [
+  {id:"squad",    label:"Squad"},
+  {id:"training", label:"Training"},
+  {id:"shop",     label:"Shop"},
+  {id:"league",   label:"League"},
+  {id:"race",     label:"Race Day"},
+];
+
+function pips(v){
+  const n = clamp(Math.round(v/10),0,10);
+  const cls = v>=70?"on":(v>=45?"mid":"low");
+  let h='<span class="pips">';
+  for(let i=0;i<10;i++) h+=`<i class="pip${i<n?" "+cls:""}"></i>`;
+  return h+"</span>";
+}
+function statCell(v){
+  return `<span title="${v.toFixed(1)}">${pips(v)}</span> <span class="statval">${Math.round(v)}</span>`;
+}
+
+function renderTop(){
+  document.getElementById("clubName").textContent = state.club.name.toUpperCase();
+  document.getElementById("clubSub").textContent =
+    TIERS[state.tier].name + " · Season " + state.season;
+  const raced = state.week;
+  document.getElementById("strip").innerHTML = `
+    <span class="chip money">Cash <b>${money(state.money)}</b></span>
+    <span class="chip">Week <b>${Math.min(state.week+1,WEEKS_PER_SEASON)}/${WEEKS_PER_SEASON}</b></span>
+    <span class="chip">Training <b>${state.slots}/${TRAINING_SLOTS}</b></span>
+    <span class="chip">Position <b>${ordinal(myTablePos())}</b></span>
+    <span class="chip">Squad AVG <b>${teamAverage().toFixed(1)}</b></span>`;
+}
+
+function renderNav(){
+  const nav=document.getElementById("nav");
+  if(state.screen==="season"){ nav.innerHTML=""; return; }
+  nav.innerHTML = SCREENS.map(s=>
+    `<button data-act="nav" data-arg="${s.id}" class="${state.screen===s.id?"on":""}">${s.label}${
+      s.id==="training"&&state.slots>0?` (${state.slots})`:""}</button>`).join("")
+    + `<button data-act="wipe" class="danger small" style="margin-left:auto">New Club</button>`;
+}
+
+/* ---- SQUAD ---------------------------------------------------- */
+function screenSquad(){
+  const ctx=playerCtx();
+  const fac=ctx.facility;
+  const rows = orderedRunners().map((r,i)=>{
+    const eff=effectiveStats(r,ctx);
+    const pair=state.inventory.find(p=>p.uid===r.shoeUid);
+    const opts = state.inventory
+      .filter(p=>!p.wornBy || p.wornBy===r.id)
+      .map(p=>`<option value="${p.uid}" ${p.uid===r.shoeUid?"selected":""}>${esc(SHOES[p.shoe].name)}</option>`).join("");
+    return `<tr>
+      <td class="num"><b>${i+1}</b></td>
+      <td>
+        <button class="small" data-act="up" data-arg="${r.id}" ${i===0?"disabled":""}>&#9650;</button>
+        <button class="small" data-act="down" data-arg="${r.id}" ${i===SQUAD_SIZE-1?"disabled":""}>&#9660;</button>
+      </td>
+      <td class="runner"><b>${esc(r.name)}</b><br><span class="muted small">${esc(r.archetype)} &middot; ${r.age}</span></td>
+      <td><select data-act="shoe" data-arg="${r.id}">
+        <option value="none" ${!r.shoeUid?"selected":""}>&mdash; barefoot &mdash;</option>${opts}
+      </select></td>
+      ${STAT_KEYS.map(k=>{
+        const base=r.stats[k], e=eff[k];
+        const diff=e-base;
+        return `<td>${statCell(e)}${diff>0.5?` <span class="up small">+${Math.round(diff)}</span>`:
+                diff<-0.5?` <span class="down small">${Math.round(diff)}</span>`:""}</td>`;
+      }).join("")}
+    </tr>`;
+  }).join("");
+
+  return `
+  <div class="panel">
+    <div class="row spread">
+      <h2>Squad &amp; Running Order</h2>
+      <div class="row">
+        <button data-act="auto">Auto Order</button>
+      </div>
+    </div>
+    <p class="muted small">Leg 1 runs first, leg 10 brings the baton home. The ground cuts up as the
+      race goes on, so mud, grass and rough sections get heavier on the later legs &mdash;
+      put your heavy-ground runners at the back. Numbers shown include shoes and facilities.</p>
+    <div style="overflow-x:auto">
+    <table>
+      <tr><th>Leg</th><th></th><th>Runner</th><th>Shoes</th>
+        ${STATS.map(s=>`<th title="${esc(s.desc)}">${s.short}</th>`).join("")}</tr>
+      ${rows}
+    </table>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>Facility bonuses in use</h3>
+    <div class="row small">
+      ${STAT_KEYS.filter(k=>fac[k]).map(k=>`<span class="tag good">${STAT_BY_KEY[k].name} +${fac[k]}</span>`).join(" ")
+        || '<span class="muted">None yet &mdash; buy terrain in the shop.</span>'}
+    </div>
+  </div>`;
+}
+
+/* ---- TRAINING -------------------------------------------------- */
+function screenTraining(){
+  const cards = STATS.map(s=>{
+    const owns = ownsPlotFor(s.key);
+    const plot = PLOT_BY_STAT[s.key];
+    const avg = state.runners.reduce((a,r)=>a+r.stats[s.key],0)/state.runners.length;
+    const can = owns && state.slots>0;
+    return `<div class="card ${owns?"":"locked"}">
+      <div class="row spread">
+        <span class="title">${s.name}</span>
+        <span class="muted small">avg ${avg.toFixed(1)}</span>
+      </div>
+      <div>${pips(avg)}</div>
+      <div class="muted small">${esc(s.desc)}</div>
+      ${owns
+        ? `<button class="primary" data-act="train" data-arg="${s.key}" ${can?"":"disabled"}>Train Whole Team</button>`
+        : `<div class="tag bad">Locked</div><div class="small muted">Needs the ${esc(plot?plot.name:"facility")} &mdash; ${plot?money(plot.cost):""} in the shop.</div>`}
+    </div>`;
+  }).join("");
+
+  const log = state.trainLog.length
+    ? state.trainLog.map(l=>`<div class="small">S${l.season} W${l.week+1} &middot; ${STAT_BY_KEY[l.stat].name}
+        <span class="up">+${l.avg.toFixed(1)} avg</span></div>`).join("")
+    : '<div class="muted small">No sessions yet.</div>';
+
+  return `
+  <div class="panel">
+    <div class="row spread">
+      <h2>Training Ground</h2>
+      <span class="chip">Sessions left this week <b>${state.slots}</b></span>
+    </div>
+    <p class="muted small">Each session trains the <b>whole squad</b> in one attribute. Gains get
+      smaller as an attribute approaches 100. You can only train an attribute you own the terrain for.</p>
+    <div class="grid cols3">${cards}</div>
+  </div>
+  <div class="panel">
+    <h3>Recent sessions</h3>
+    ${log}
+  </div>`;
+}
+
+/* ---- SHOP ------------------------------------------------------ */
+function screenShop(){
+  const plots = PLOTS.filter(p=>!p.start).map(p=>{
+    const owned = state.plots.includes(p.id);
+    const afford = state.money>=p.cost;
+    return `<div class="card ${owned?"owned":""}">
+      <div class="row spread">
+        <span class="title">${p.name}</span>
+        <span class="price">${owned?"OWNED":money(p.cost)}</span>
+      </div>
+      <div class="muted small">${esc(p.desc)}</div>
+      <div><span class="tag good">Unlocks ${STAT_BY_KEY[p.stat].name} training</span>
+           <span class="tag good">+${FACILITY_BONUS} ${STAT_BY_KEY[p.stat].short}</span></div>
+      ${owned?"":`<button data-act="buyplot" data-arg="${p.id}" ${afford?"":"disabled"}>Buy</button>`}
+    </div>`;
+  }).join("");
+
+  const shoes = SHOE_LIST.filter(s=>s.cost>0).map(s=>{
+    const own = state.inventory.filter(i=>i.shoe===s.id).length;
+    const afford = state.money>=s.cost;
+    const mods = Object.keys(s.mods).map(k=>
+      `<span class="tag ${s.mods[k]>0?"good":"bad"}">${STAT_BY_KEY[k].short} ${s.mods[k]>0?"+":""}${s.mods[k]}</span>`).join(" ");
+    return `<div class="card">
+      <div class="row spread">
+        <span class="title">${s.name}</span>
+        <span class="price">${money(s.cost)}</span>
+      </div>
+      <div>${mods}</div>
+      <div class="row spread">
+        <span class="muted small">Owned: ${own}</span>
+        <button data-act="buyshoe" data-arg="${s.id}" ${afford?"":"disabled"}>Buy Pair</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  const spare = state.inventory.filter(i=>!i.wornBy);
+  return `
+  <div class="panel">
+    <div class="row spread"><h2>Terrain &amp; Facilities</h2><span class="chip money">Cash <b>${money(state.money)}</b></span></div>
+    <p class="muted small">Buying a piece of terrain lets your squad train on it. Train it and they get
+      faster on that ground in races &mdash; and owning it gives a small permanent bonus straight away.</p>
+    <div class="grid cols3">${plots}</div>
+  </div>
+  <div class="panel">
+    <h2>Shoes</h2>
+    <p class="muted small">Every pair you buy goes into the kit bag. Assign pairs to runners on the Squad screen.
+      ${spare.length?`<b>${spare.length}</b> spare pair(s) unassigned.`:""}</p>
+    <div class="grid cols3">${shoes}</div>
+  </div>`;
+}
+
+/* ---- LEAGUE ---------------------------------------------------- */
+function screenLeague(){
+  const rows = sortedTable().map((r,i)=>`
+    <tr class="${r.club.id===state.club.id?"me":""}">
+      <td class="num">${i+1}</td>
+      <td><span class="swatch" style="background:${r.club.colour}"></span> ${esc(r.club.name)}</td>
+      <td>${r.club.code}</td>
+      <td class="num">${r.played}</td>
+      <td class="num">${r.wins}</td>
+      <td class="num">${r.best===99?"-":ordinal(r.best)}</td>
+      <td class="num"><b>${r.pts}</b></td>
+    </tr>`).join("");
+
+  const fixtures = state.fixtures.map(f=>{
+    const done = !!f.result;
+    const isNow = f.week===state.week && !done;
+    return `<tr class="${isNow?"me":""}">
+      <td class="num">${f.week+1}</td>
+      <td>${esc(f.venue)}</td>
+      <td>${done?ordinal(f.result.place):(isNow?'<span class="blink">NEXT UP</span>':"&mdash;")}</td>
+      <td class="num">${done?f.result.points:""}</td>
+      <td class="num">${done?money(f.result.prize):""}</td>
+    </tr>`;
+  }).join("");
+
+  const t=TIERS[state.tier];
+  return `
+  <div class="panel">
+    <div class="row spread">
+      <h2>${esc(t.name)}</h2>
+      <span class="chip">Season <b>${state.season}</b></span>
+    </div>
+    <p class="muted small">Points: ${POINTS.join(" / ")} by finishing position.
+      Win the league and you are promoted next season with a bonus of ${money(LEAGUE_PRIZE[0]*t.prize)}.
+      ${state.tier>0?"Finish last and you go down.":""}</p>
+    <table>
+      <tr><th>Pos</th><th>Club</th><th></th><th>Raced</th><th>Wins</th><th>Best</th><th>Pts</th></tr>
+      ${rows}
+    </table>
+  </div>
+  <div class="panel">
+    <h3>Fixtures</h3>
+    <table>
+      <tr><th>Wk</th><th>Course</th><th>Result</th><th>Pts</th><th>Prize</th></tr>
+      ${fixtures}
+    </table>
+  </div>
+  <div class="panel">
+    <h3>The Ladder</h3>
+    <table>
+      <tr><th>Tier</th><th>League</th><th>Rival Standard</th><th>Prize Money</th></tr>
+      ${TIERS.map((x,i)=>`<tr class="${i===state.tier?"me":""}">
+        <td class="num">${i+1}</td><td>${esc(x.name)}</td>
+        <td>${x.base} avg</td><td>${"£".repeat(Math.min(5,Math.round(x.prize)))||"£"}</td></tr>`).join("")}
+    </table>
+  </div>`;
+}
+
+/* ---- RACE DAY -------------------------------------------------- */
+function screenRacePreview(){
+  const course = currentCourse();
+  const mix = course.mixSummary();
+  const ctx = playerCtx();
+  const order = orderedRunners().map((r,i)=>{
+    const eff=effectiveStats(r,ctx);
+    let fit=0,w=0;
+    for(const k in mix){ fit+=eff[TERRAIN[k].stat]*mix[k]; w+=mix[k]; }
+    const suit = fit/w;
+    return `<tr><td class="num">${i+1}</td><td>${esc(r.name)}</td>
+      <td>${statCell(suit)}</td>
+      <td class="muted small">${esc((state.inventory.find(p=>p.uid===r.shoeUid)||{shoe:"none"}).shoe==="none"?"barefoot":SHOES[(state.inventory.find(p=>p.uid===r.shoeUid)||{shoe:"trainers"}).shoe].name)}</td></tr>`;
+  }).join("");
+
+  return `
+  <div class="panel">
+    <div class="row spread">
+      <h2>Race Day &mdash; ${esc(course.venue)}</h2>
+      <span class="chip">Week <b>${state.week+1}/${WEEKS_PER_SEASON}</b></span>
+    </div>
+    <div id="raceWrap"><canvas id="preview"></canvas></div>
+    <div class="row spread" style="margin-top:10px">
+      <div class="terrainkey">
+        ${TERRAIN_KEYS.filter(k=>mix[k]).map(k=>
+          `<span><i class="swatch" style="background:${TERRAIN[k].col}"></i>${TERRAIN[k].name} ${Math.round(mix[k]/16*100)}%</span>`).join("")}
+        ${course.exposedCount()?`<span><i class="swatch" style="background:#8fa8c9"></i>Wind ${Math.round(course.exposedCount()/16*100)}%</span>`:""}
+      </div>
+      <div class="row">
+        <button data-act="auto">Auto Order</button>
+        <button class="primary" data-act="startrace">Start Relay</button>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>Your order &mdash; suitability for this course</h3>
+    <table><tr><th>Leg</th><th>Runner</th><th>Course suitability</th><th>Shoes</th></tr>${order}</table>
+  </div>`;
+}
+
+function screenRaceRunning(){
+  return `
+  <div class="panel">
+    <div class="row spread">
+      <h2>${esc(currentCourse().venue)}</h2>
+      <div class="row">
+        <button data-act="speed" data-arg="18">Slow</button>
+        <button data-act="speed" data-arg="34" class="on" id="spd34">Normal</button>
+        <button data-act="speed" data-arg="90">Fast</button>
+        <button data-act="skip">Skip to Result</button>
+      </div>
+    </div>
+    <div id="raceWrap"><canvas id="racecanvas"></canvas></div>
+  </div>`;
+}
+
+function lossBars(res){
+  // sprint is shown as a gain on its own row, not as a loss
+  const entries = STAT_KEYS.filter(k=>k!=="sprint").map(k=>({k, secs:res.lost[k]||0}));
+  const maxv = Math.max(1, ...entries.map(e=>e.secs), res.sprintGain);
+  let h = entries.sort((a,b)=>b.secs-a.secs).map(e=>`
+    <div class="lossrow">
+      <span class="lossname">${STAT_BY_KEY[e.k].name}</span>
+      <span class="lossbar"><i style="width:${Math.round(e.secs/maxv*100)}%"></i></span>
+      <span class="lossnum">-${e.secs.toFixed(1)}s</span>
+    </div>`).join("");
+  h += `<div class="lossrow">
+      <span class="lossname" style="color:var(--green)">Sprint</span>
+      <span class="lossbar"><i class="gain" style="width:${Math.round(res.sprintGain/maxv*100)}%"></i></span>
+      <span class="lossnum up">+${res.sprintGain.toFixed(1)}s</span>
+    </div>`;
+  return h;
+}
+
+function screenResults(){
+  const res=state.lastResult;
+  if(!res) return `<div class="panel">No result yet.</div>`;
+  const pos = res.positions.map(p=>`
+    <tr class="${p.isPlayer?"me":""}">
+      <td class="num">${p.place}</td>
+      <td><span class="swatch" style="background:${p.colour}"></span> ${esc(p.name)}</td>
+      <td class="num">${fmtTime(p.time)}</td>
+      <td class="num muted">${p.gap>0.05?"+"+p.gap.toFixed(1):""}</td>
+      <td class="num">${POINTS[p.place-1]||0}</td>
+    </tr>`).join("");
+
+  const legs = res.legs.map(l=>{
+    // speed is a flat baseline every runner pays, so the per-leg tag calls
+    // out the situational weakness - the ground or the fade
+    const worst = STAT_KEYS.filter(k=>k!=="speed"&&k!=="sprint")
+      .map(k=>({k,v:l.lost[k]||0})).sort((a,b)=>b.v-a.v)[0];
+    const st=l.staminaEnd;
+    return `<tr>
+      <td class="num">${l.leg}</td>
+      <td>${esc(l.name)}</td>
+      <td class="num">${fmtTime(l.time)}</td>
+      <td><span class="lossbar" style="display:inline-block;width:70px;vertical-align:middle">
+          <i style="width:${Math.round(st)}%;background:${st>50?"var(--green)":st>22?"var(--gold)":"var(--red)"}"></i>
+        </span> <span class="statval">${Math.round(st)}</span></td>
+      <td>${worst&&worst.v>0.3?`<span class="tag bad">${STAT_BY_KEY[worst.k].name} -${worst.v.toFixed(1)}s</span>`:'<span class="tag good">solid</span>'}</td>
+    </tr>`;
+  }).join("");
+
+  const banner = res.place===1
+    ? `<div class="banner good">Race won at ${esc(res.venue)}! ${money(res.prize)} prize money.</div>`
+    : res.place<=3
+      ? `<div class="banner">${ordinal(res.place)} at ${esc(res.venue)} &mdash; ${money(res.prize)}.</div>`
+      : `<div class="banner bad">${ordinal(res.place)} at ${esc(res.venue)} &mdash; ${money(res.prize)}. Work to do.</div>`;
+
+  return `
+  ${banner}
+  <div class="grid cols2">
+    <div class="panel">
+      <h2>Result</h2>
+      <table><tr><th>Pos</th><th>Club</th><th>Time</th><th>Gap</th><th>Pts</th></tr>${pos}</table>
+      <p class="small muted">Winning time ${fmtTime(res.winTime)} over ${SQUAD_SIZE} legs
+        of ${res.lengthM}m.</p>
+    </div>
+    <div class="panel">
+      <h2>Where you lost time</h2>
+      <p class="muted small">Seconds your ten runners gave away to each attribute across the whole relay.</p>
+      ${lossBars(res)}
+      <h3 style="margin-top:10px">What to do next</h3>
+      ${recommendations(res).map(r=>`<div class="small" style="margin-bottom:4px">&gt; ${esc(r)}</div>`).join("")}
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Leg by leg</h2>
+    <table><tr><th>Leg</th><th>Runner</th><th>Time</th><th>Stamina left</th><th>Biggest ground/fade loss</th></tr>${legs}</table>
+  </div>
+  <div class="panel center">
+    <button class="primary" data-act="continue">Continue &raquo;</button>
+  </div>`;
+}
+
+function screenSeasonEnd(){
+  const se=state.seasonEnd;
+  const rows = se.table.map(r=>`
+    <tr class="${r.isPlayer?"me":""}">
+      <td class="num">${r.place}</td>
+      <td><span class="swatch" style="background:${r.colour}"></span> ${esc(r.name)}</td>
+      <td class="num">${r.wins}</td>
+      <td class="num"><b>${r.pts}</b></td>
+    </tr>`).join("");
+  let banner;
+  if(se.promoted) banner=`<div class="banner good">Champions! ${esc(TIERS[se.tier].name)} won &mdash; promoted to the ${esc(TIERS[se.newTier].name)}.</div>`;
+  else if(se.champion) banner=`<div class="banner good">Champions of the ${esc(TIERS[se.tier].name)} &mdash; the top of the sport. Nowhere left to climb.</div>`;
+  else if(se.relegated) banner=`<div class="banner bad">Bottom of the ${esc(TIERS[se.tier].name)} &mdash; relegated to the ${esc(TIERS[se.newTier].name)}.</div>`;
+  else banner=`<div class="banner">${ordinal(se.pos)} in the ${esc(TIERS[se.tier].name)}. Another season at this level.</div>`;
+
+  return `
+  ${banner}
+  <div class="panel">
+    <h2>Season ${se.season} final table</h2>
+    <table><tr><th>Pos</th><th>Club</th><th>Wins</th><th>Pts</th></tr>${rows}</table>
+    <p style="margin-top:8px">End of season prize money: <b class="up">${money(se.prize)}</b></p>
+  </div>
+  <div class="panel center">
+    <button class="primary" data-act="nextseason">Start Season ${se.season+1} &raquo;</button>
+  </div>`;
+}
+
+/* ---- master render -------------------------------------------- */
+function render(){
+  renderTop(); renderNav();
+  const el=document.getElementById("screen");
+  let html="";
+  switch(state.screen){
+    case "squad":    html=screenSquad(); break;
+    case "training": html=screenTraining(); break;
+    case "shop":     html=screenShop(); break;
+    case "league":   html=screenLeague(); break;
+    case "season":   html=screenSeasonEnd(); break;
+    case "race":
+      if(state.raceState==="running") html=screenRaceRunning();
+      else if(state.raceState==="done") html=screenResults();
+      else html=screenRacePreview();
+      break;
+    default: html=screenSquad();
+  }
+  el.innerHTML=html;
+
+  // canvases have to be wired up after the HTML lands
+  if(state.screen==="race" && state.raceState===null){
+    const cv=document.getElementById("preview");
+    if(cv) drawCoursePreview(cv, currentCourse());
+  }
+  if(state.screen==="race" && state.raceState==="running"){
+    const cv=document.getElementById("racecanvas");
+    if(cv && liveRace){
+      RaceView.attach(cv);
+      RaceView.setRace(liveRace);
+      RaceView.speed=34;
+      RaceView.start(()=>finishRace());
+    }
+  }
+}
+
+/* ---- events ---------------------------------------------------- */
+document.addEventListener("click", e=>{
+  const btn = e.target.closest("[data-act]");
+  if(!btn) return;
+  const act=btn.dataset.act, arg=btn.dataset.arg;
+  switch(act){
+    case "nav":
+      if(state.raceState==="running") return;
+      state.screen=arg; save(); render(); break;
+    case "up":        moveInOrder(+arg,-1); break;
+    case "down":      moveInOrder(+arg, 1); break;
+    case "auto":      autoOrder(); break;
+    case "train":     trainStat(arg); break;
+    case "buyplot":   buyPlot(arg); break;
+    case "buyshoe":   buyShoe(arg); break;
+    case "startrace": startRace(); break;
+    case "speed":
+      RaceView.speed=+arg;
+      document.querySelectorAll('[data-act="speed"]').forEach(b=>b.classList.toggle("on", b.dataset.arg===arg));
+      break;
+    case "skip":      RaceView.skip(); break;
+    case "continue":  continueAfterRace(); break;
+    case "nextseason":startNextSeason(); break;
+    case "wipe":      wipeSave(); break;
+  }
+});
+document.addEventListener("change", e=>{
+  const el=e.target.closest("[data-act='shoe']");
+  if(!el) return;
+  assignShoe(+el.dataset.arg, el.value);
+});
+
+/* ================================================================
+   SECTION 10 : BOOT
+   ================================================================ */
+function boot(){
+  if(!load()){
+    let name=null;
+    try{ name = prompt("Name your cross country club:", "Hillside Harriers"); }catch(e){}
+    newGame((name||"Hillside Harriers").slice(0,26));
+  }
+  render();
+}
+if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",boot);
+else boot();
+
+/* expose a few internals for headless balance testing */
+window.XCM = {
+  get state(){return state;}, newGame, buildCourse, VENUES, TIERS, makeSquad, makeRivals,
+  newRace, simulateToEnd, standings, analyseTeam, effectiveStats, courseForWeek,
+  startRace, finishRace, continueAfterRace, trainStat, buyPlot, buyShoe, render,
+  aiOrder, orderedRunners, playerCtx, save, load, SQUAD_SIZE, STAT_KEYS,
+  autoPlayRace, autoOrder, sortedTable, ownsPlotFor, PLOTS, PLOT_BY_STAT, SHOES,
+  teamAverage, startNextSeason, TIERS_LEN:TIERS.length, WEEKS_PER_SEASON,
+};
+/* === END OF PART 3 === */
+</script>
+</body>
+</html>
