@@ -628,6 +628,24 @@ const SPRITE_FRAMES = [
   ".HH../.HH../BBB../.B.../.L.../L.L../...../.....",
   ".HH../.HH../BBB../.B.../.LL../L.L../...../.....",
 ];
+/* ---- a bigger runner, for the training title card ---------------
+   The 5x8 race sprite is too coarse to read blown up, so the intro
+   uses its own 9x13 figure with arms and a proper stride.
+   H head/arms   B vest   L legs                                    */
+const HERO_FRAMES = [
+  "...HHH.../...HHH.../....H..../..HBBBH../...BBB.../...BBB.../...BBB.../...L.L.../..L...L../..L....L./.LL.....L/.LL....../.........",
+  "...HHH.../...HHH.../....H..../...BBB.../..HBBBH../...BBB.../...BBB.../....LL.../....LL.../...L.L.../..L...L../..LL..LL./.........",
+  "...HHH.../...HHH.../....H..../..HBBBH../...BBB.../...BBB.../...BBB.../...L.L.../..L...L../.L....L../L.....LL./......LL./.........",
+  "...HHH.../...HHH.../....H..../...BBB.../..HBBBH../...BBB.../...BBB.../....LL.../...L.L.../...L..L../..LL...L./.......LL/.........",
+];
+const HERO = HERO_FRAMES.map(f=>{
+  const rows=f.split("/"); const px=[];
+  for(let y=0;y<rows.length;y++)
+    for(let x=0;x<rows[y].length;x++)
+      if(rows[y][x]!==".")px.push([x,y,rows[y][x]]);
+  return px;
+});
+
 const SPRITES = SPRITE_FRAMES.map(f=>{
   const rows=f.split("/"); const px=[];
   for(let y=0;y<rows.length;y++)
@@ -1138,9 +1156,9 @@ function drawText(ctx, str, x, y, col, scale){
 }
 const textW = (s,sc)=>String(s).length*6*(sc||1);
 
-function drawRunnerSprite(ctx, x, y, frame, colour, halo){
+function drawRunnerSprite(ctx, x, y, frame, colour, halo, scale){
   const px = SPRITES[frame & 3];
-  const S = RUNNER_SCALE;
+  const S = scale || RUNNER_SCALE;
   const bx = Math.round(x)-2*S, by = Math.round(y)-7*S;
   if(halo){
     ctx.fillStyle = halo;
@@ -1269,6 +1287,24 @@ function drawHomeBadge(c){
   c.fillRect(x,y,w,1); c.fillRect(x,y+14,w,1);
   c.fillRect(x,y,1,15); c.fillRect(x+w-1,y,1,15);
   drawText(c,label,x+4,y+4,"#f5c542");
+}
+
+/* the big title-card runner */
+function drawHeroRunner(ctx, x, y, frame, colour, scale){
+  const px = HERO[frame & 3], S = scale||6;
+  const bx = Math.round(x) - 4*S, by = Math.round(y) - 12*S;
+  // a dark halo so the figure lifts off the striped background
+  ctx.fillStyle = "#0b0e14";
+  for(let i=0;i<px.length;i++){
+    const sx=bx+px[i][0]*S, sy=by+px[i][1]*S;
+    ctx.fillRect(sx-S,sy,S,S); ctx.fillRect(sx+S,sy,S,S);
+    ctx.fillRect(sx,sy-S,S,S); ctx.fillRect(sx,sy+S,S,S);
+  }
+  for(let i=0;i<px.length;i++){
+    const ch = px[i][2];
+    ctx.fillStyle = ch==="H" ? "#eccfa4" : (ch==="B" ? colour : "#8794ad");
+    ctx.fillRect(bx+px[i][0]*S, by+px[i][1]*S, S, S);
+  }
 }
 
 /* work out how to fit the loop into the track area */
@@ -1511,7 +1547,8 @@ const RaceView = {
    TRAINING SESSION VIEW
    The squad out on the ground you are training them on, working.
    ================================================================ */
-const TRAIN_SECONDS = 7.5;      // how long a session takes to watch
+const INTRO_SECONDS = 5.0;      // the little title card before they set off
+const TRAIN_SECONDS = 9.5;      // how long the session itself takes to watch
 
 const TrainView = {
   canvas:null, ctx:null, baked:null, view:null, course:null,
@@ -1528,12 +1565,13 @@ const TrainView = {
     this.view=courseView(course);
     this.baked=bakeCourse(course,this.view);
     this.label=STAT_BY_KEY[statKey].name.toUpperCase()+" SESSION";
+    this.statKey=statKey;
     this.colour=colour;
     this.t=0;
     // stronger runners lap quicker, so the group strings out naturally
     this.runners = rows.map((row,i)=>({
       name:row.name,
-      lap: 2.9 - (row.after/100)*0.9 + Math.random()*0.35,
+      lap: 6.2 - (row.after/100)*1.6 + Math.random()*0.7,   // a steady session pace
       off: i/rows.length + Math.random()*0.03,
       phase: Math.random()*6.283,
     }));
@@ -1547,21 +1585,65 @@ const TrainView = {
   start(onDone){
     this.onDone=onDone; this.running=true;
     let last=performance.now();
+    const total = INTRO_SECONDS + TRAIN_SECONDS;
     const tick=(now)=>{
       if(!this.running) return;
       this.t += Math.min(0.1,(now-last)/1000); last=now;
       this.draw();
-      if(this.t>=TRAIN_SECONDS){ this.running=false; if(this.onDone) this.onDone(); return; }
+      if(this.t>=total){ this.running=false; if(this.onDone) this.onDone(); return; }
       this.raf=requestAnimationFrame(tick);
     };
     this.raf=requestAnimationFrame(tick);
   },
   stop(){ this.running=false; cancelAnimationFrame(this.raf); },
+  /* Skip always goes straight to the results. Clicking the title card
+     itself just gets the session under way early. */
   skip(){ this.stop(); if(this.onDone) this.onDone(); },
+  skipIntro(){ if(this.running && this.t < INTRO_SECONDS){ this.t = INTRO_SECONDS; this.draw(); } },
+
+  /* ---- the title card: a big runner and what today's session is ---- */
+  drawIntro(){
+    const c=this.ctx, t=this.t;
+    c.fillStyle="#0b0e14"; c.fillRect(0,0,CW,CH);
+    // scrolling retro stripes behind everything
+    for(let y=0;y<CH;y+=4){
+      const shift = ((t*26)|0) % 8;
+      c.fillStyle = ((y+shift)%8===0) ? "#121a26" : "#0e1420";
+      c.fillRect(0,y,CW,2);
+    }
+    // banner bars
+    c.fillStyle="#151b28"; c.fillRect(0,26,CW,34); c.fillRect(0,CH-46,CW,30);
+    c.fillStyle="#f5c542"; c.fillRect(0,26,CW,1); c.fillRect(0,59,CW,1);
+    c.fillStyle="#39465f"; c.fillRect(0,CH-46,CW,1); c.fillRect(0,CH-17,CW,1);
+
+    const s = STAT_BY_KEY[this.statKey];
+    const title = s.name.toUpperCase();
+    drawText(c,title,(CW-textW(title,3))/2,34,"#f5c542",3);
+    drawText(c,"SESSION",(CW-textW("SESSION",2))/2,64,"#d9e2f2",2);
+
+    // the man himself, mid-stride, front and centre
+    drawHeroRunner(c, CW/2, 172, ((t*7)|0)&3, this.colour, 7);
+
+    // where they are working, and the countdown to setting off
+    const gr = this.course.venue;
+    drawText(c,gr,(CW-textW(gr))/2,CH-41,"#8fa8c9");
+    const left = Math.max(0, Math.ceil(INTRO_SECONDS - t));
+    const go = left>0 ? String(left) : "GO";
+    if(left>0 || ((t*6)|0)%2===0)
+      drawText(c,go,(CW-textW(go,2))/2,CH-31,left>0?"#d9e2f2":"#5fd35f",2);
+
+    // squad marching on at the bottom as a little parade
+    for(let i=0;i<SQUAD_SIZE;i++){
+      const x = ((t*26) + i*34) % (CW+40) - 20;
+      drawRunnerSprite(c, x, CH-52, (((t*8)|0)+i)&3, this.colour, null, 1);
+    }
+  },
 
   draw(){
     const c=this.ctx; if(!c||!this.course) return;
-    const prog = clamp(this.t/TRAIN_SECONDS,0,1);
+    if(this.t < INTRO_SECONDS){ this.drawIntro(); return; }
+    const tt = this.t - INTRO_SECONDS;
+    const prog = clamp(tt/TRAIN_SECONDS,0,1);
     c.fillStyle="#0b0e14"; c.fillRect(0,0,CW,CH);
     c.drawImage(this.baked,0,0);
 
@@ -1574,14 +1656,14 @@ const TrainView = {
 
     // the squad, working their way round
     this.runners.forEach((r,i)=>{
-      const f = (this.t/r.lap + r.off) % 1;
+      const f = (tt/r.lap + r.off) % 1;
       const a = this.course.posAt(f);
       const p = proj(this.view,a);
       // spread them across the width of the path so it reads as a group
-      const lane = Math.sin(this.t*0.9 + r.phase)*2.5 + ((i%3)-1)*2.4;
+      const lane = Math.sin(tt*0.6 + r.phase)*2.5 + ((i%3)-1)*2.4;
       p.x += Math.cos(a.ang+Math.PI/2)*lane;
       p.y += Math.sin(a.ang+Math.PI/2)*lane;
-      drawRunnerSprite(c, p.x, p.y, ((this.t*9+i)|0)&3, this.colour, null);
+      drawRunnerSprite(c, p.x, p.y, ((tt*6+i)|0)&3, this.colour, null);
       // the improvement popping up above them
       const pop = this.pops[i];
       if(pop && prog>=pop.at && prog<pop.at+0.16){
@@ -1982,6 +2064,18 @@ function autoOrder(){
   save(); render();
 }
 
+/* Your home course, exactly as it will be raced this season, so the
+   Ground screen shows the real thing rather than a lookalike. */
+function homeCourse(){
+  const venue = playerHomeVenue();
+  const fx = (state.fixtures||[]).find(f=>f.home);
+  const wk = fx ? fx.week : 0;
+  const c = buildCourse(venue, hashStr(venue.name)+state.season*97+wk*13);
+  c.isHome = true;
+  c.hostName = state.club.name;
+  return c;
+}
+
 /* the venue for a given fixture - your own ground when you host */
 function venueForFixture(fx){
   if(!fx) return playerHomeVenue();
@@ -2278,6 +2372,7 @@ function wipeSave(){
 const SCREENS = [
   {id:"squad",    label:"Squad"},
   {id:"training", label:"Training"},
+  {id:"ground",   label:"My Ground"},
   {id:"shop",     label:"Shop"},
   {id:"league",   label:"League"},
   {id:"race",     label:"Race Day"},
@@ -2465,6 +2560,72 @@ function screenTraining(){
   </div>`;
 }
 
+/* ---- MY GROUND -------------------------------------------------- */
+function screenGround(){
+  const course = homeCourse();
+  const mix = course.mixSummary();
+  const fx = (state.fixtures||[]).find(f=>f.home);
+  const raced = fx && fx.result;
+  const built = INFRA.filter(it=>infraCount(it.id)>0);
+  const terr = PLOTS.filter(p=>plotLevel(p.id)>0);
+
+  return `
+  <div class="panel">
+    <div class="row spread">
+      <h2>${esc(course.venue)}</h2>
+      <div class="row">
+        <span class="chip">Home boost <b>+${Math.round((homeBoost(true)-1)*100)}%</b></span>
+        <span class="chip">Stands <b>${standCount()}</b></span>
+        <span class="chip money">Home race day <b>${money(expectedIncome(true))}</b></span>
+      </div>
+    </div>
+    <div id="raceWrap"><canvas id="groundcanvas"></canvas></div>
+    <div class="row spread" style="margin-top:10px">
+      <div class="terrainkey">
+        ${TERRAIN_KEYS.filter(k=>mix[k]).map(k=>
+          `<span><i class="swatch" style="background:${TERRAIN[k].col}"></i>${TERRAIN[k].name} ${Math.round(mix[k]/16*100)}%</span>`).join("")}
+        ${course.exposedCount()?`<span><i class="swatch" style="background:#8fa8c9"></i>Wind ${Math.round(course.exposedCount()/16*100)}%</span>`:""}
+      </div>
+      <span class="muted small">${course.lengthM}m lap &middot; ${SQUAD_SIZE} legs</span>
+    </div>
+    <p class="muted small" style="margin-top:8px">
+      ${fx
+        ? (raced
+            ? `You hosted in race ${fx.week+1} this season and finished ${ordinal(fx.result.place)}.`
+            : `You host race <b>${fx.week+1}</b> of the season here.`)
+        : `Your home fixture is set at the start of each season.`}
+      Every piece of terrain you buy is built into this loop, and it is the ground your squad trains on.
+    </p>
+  </div>
+  <div class="grid cols2">
+    <div class="panel">
+      <h3>Terrain you have laid</h3>
+      ${terr.length ? `<table>
+        <tr><th>Ground</th><th>Owned</th><th>Bonus</th><th>Training</th></tr>
+        ${terr.map(p=>`<tr>
+          <td>${esc(p.name)}</td>
+          <td class="num">${plotLevel(p.id)}/${PLOT_MAX_LEVEL}</td>
+          <td class="num up">+${facilityBonusFor(plotLevel(p.id))} ${STAT_BY_KEY[p.stat].short}</td>
+          <td class="num">x${trainQuality(p.stat).toFixed(2)}</td>
+        </tr>`).join("")}
+      </table>` : `<p class="muted small">Nothing laid yet &mdash; your ground is a bare flat field.</p>`}
+    </div>
+    <div class="panel">
+      <h3>What you have built</h3>
+      ${built.length ? `<table>
+        <tr><th>Building</th><th>Number</th><th>Next one</th></tr>
+        ${built.map(it=>`<tr>
+          <td>${esc(it.name)}</td>
+          <td class="num">${infraCount(it.id)}/${it.max}</td>
+          <td class="num muted">${infraMaxed(it.id)?"maxed":money(infraCost(it.id))}</td>
+        </tr>`).join("")}
+      </table>` : `<p class="muted small">Nothing built yet. A stand puts a crowd behind your runners
+        and takes money on the gate.</p>`}
+      <div style="margin-top:8px"><button data-act="nav" data-arg="shop">Build something</button></div>
+    </div>
+  </div>`;
+}
+
 /* ---- TRAINING SESSION ------------------------------------------ */
 function screenTrainSession(){
   const T = liveTraining;
@@ -2481,7 +2642,7 @@ function screenTrainSession(){
           <button data-act="skiptrain">Skip</button>
         </div>
       </div>
-      <div id="raceWrap"><canvas id="traincanvas"></canvas></div>
+      <div id="raceWrap"><canvas id="traincanvas" data-act="skipintro"></canvas></div>
       <p class="muted small" style="margin-top:8px">The whole squad is out on the
         ${esc(TRAIN_GROUND[T.stat]?TRAIN_GROUND[T.stat].label.toLowerCase():"training ground")},
         working on ${esc(s.name.toLowerCase())}. ${esc(s.desc)}.</p>
@@ -2967,6 +3128,7 @@ function render(){
     case "squad":    html=screenSquad(); break;
     case "training": html=screenTraining(); break;
     case "trainsession": html=screenTrainSession(); break;
+    case "ground":   html=screenGround(); break;
     case "shop":     html=screenShop(); break;
     case "league":   html=screenLeague(); break;
     case "season":   html=screenSeasonEnd(); break;
@@ -2983,6 +3145,10 @@ function render(){
   if(state.screen==="race" && state.raceState===null){
     const cv=document.getElementById("preview");
     if(cv) drawCoursePreview(cv, currentCourse());
+  }
+  if(state.screen==="ground"){
+    const cv=document.getElementById("groundcanvas");
+    if(cv) drawCoursePreview(cv, homeCourse());
   }
   if(state.screen==="trainsession" && liveTraining && liveTraining.phase==="running"){
     const cv=document.getElementById("traincanvas");
@@ -3020,6 +3186,7 @@ document.addEventListener("click", e=>{
     case "autotactics":  autoTactics(); break;
     case "train":     startTrainingSession(arg); break;
     case "skiptrain": TrainView.skip(); break;
+    case "skipintro": TrainView.skipIntro(); break;
     case "buyplot":   buyPlot(arg); break;
     case "buyshoe":   buyShoe(arg); break;
     case "buybuilding": buyBuilding(arg); break;
@@ -3061,7 +3228,7 @@ else boot();
 window.XCM = {
   get state(){return state;}, newGame, buildCourse, VENUE_TYPES, TIERS, makeSquad, makeRivals,
   newRace, simulateToEnd, standings, analyseTeam, effectiveStats, currentCourse,
-  playerHomeVenue, makeVenueFor, buildFixtures,
+  playerHomeVenue, makeVenueFor, buildFixtures, homeCourse, facilityBonusFor, trainQuality,
   startRace, finishRace, continueAfterRace, trainStat, buyPlot, buyShoe, render,
   aiOrder, orderedRunners, playerCtx, save, load, SQUAD_SIZE, STAT_KEYS,
   autoPlayRace, autoOrder, autoTactics, sortedTable, ownsPlotFor, PLOTS, PLOT_BY_STAT, SHOES,

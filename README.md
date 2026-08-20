@@ -104,6 +104,12 @@ You spend it on:
 - **Shoes** — mud claws, fell shoes, grass spikes, carbon racers. Each pair has trade-offs (carbon
   racers are quick but hopeless in mud). Pairs go into the kit bag and you assign them per runner.
 
+### Your ground
+
+**My Ground** shows your home course at any time — the actual loop you'll race on, with every piece
+of terrain you've laid and every stand, food truck, screen and camera rig you've built standing
+around it, plus what each is worth and what the next one costs.
+
 ### Building the ground
 
 Everything on the ground can be bought **over and over** — each one costs more than the last, and the
@@ -144,10 +150,12 @@ section if you want a tighter contest.
 Gains shrink as an attribute approaches 100, so you can't just max everything — your weakest runners
 improve fastest.
 
-You don't just click a button: the squad goes out onto the ground you're training on and you watch
-them work it. A mud session runs in the mud pit, hill work goes round the hill circuit, wind work is
-out on the exposed ridge, and the improvements pop up over each runner's head as they earn them.
-Afterwards you get the full before-and-after for all ten.
+You don't just click a button. A title card comes up first — a big pixel runner mid-stride, the
+session you picked, the ground it's on and a countdown — and then the squad goes out and works it.
+A mud session runs in the mud pit, hill work goes round the hill circuit, wind work is out on the
+exposed ridge, and the improvements pop up over each runner's head as they earn them. Afterwards you
+get the full before-and-after for all ten. Click the title card to get going early, or **Skip**
+straight to the numbers.
 
 ### Leagues and seasons
 
