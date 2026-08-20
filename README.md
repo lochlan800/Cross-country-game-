@@ -124,7 +124,13 @@ over 80% of its home ones. The constants are `HOME_BOOST` and `STADIUM_BOOST` ne
 `DATA` section if you want a tighter contest.
 
 **Training** is three sessions a week, and each session trains the **whole squad** in one attribute.
-Gains shrink as an attribute approaches 100, so you can't just max everything.
+Gains shrink as an attribute approaches 100, so you can't just max everything — your weakest runners
+improve fastest.
+
+You don't just click a button: the squad goes out onto the ground you're training on and you watch
+them work it. A mud session runs in the mud pit, hill work goes round the hill circuit, wind work is
+out on the exposed ridge, and the improvements pop up over each runner's head as they earn them.
+Afterwards you get the full before-and-after for all ten.
 
 ### Leagues and seasons
 

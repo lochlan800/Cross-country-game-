@@ -798,6 +798,28 @@ function playerHomeVenue(){
   };
 }
 
+/* The ground a session is held on: mud training happens in the mud,
+   hill training on the hill, wind work out on the exposed ridge. */
+const TRAIN_GROUND = {
+  mud:       {mix:{mud:13, flat:3},                    exposure:0.10, label:"MUD PIT"},
+  hills:     {mix:{hill:13, flat:3},                   exposure:0.20, label:"HILL CIRCUIT"},
+  longGrass: {mix:{longGrass:13, flat:3},              exposure:0.10, label:"LONG GRASS MEADOW"},
+  uneven:    {mix:{uneven:13, flat:3},                 exposure:0.15, label:"UNEVEN TRAIL"},
+  wind:      {mix:{flat:9, longGrass:4, uneven:3},     exposure:0.95, label:"EXPOSED RIDGE"},
+  fitness:   {mix:{flat:8, longGrass:4, hill:3, mud:1},exposure:0.20, label:"FITNESS TRAIL"},
+  speed:     {mix:{flat:16},                           exposure:0.05, label:"CINDER TRACK"},
+  sprint:    {mix:{flat:16},                           exposure:0.05, label:"SPRINT STRAIGHT"},
+};
+function trainingVenue(statKey){
+  const g = TRAIN_GROUND[statKey] || TRAIN_GROUND.speed;
+  return {
+    name: g.label, code:"TRN",
+    len: 600,
+    mix: Object.assign({}, g.mix),
+    exposure: g.exposure,
+  };
+}
+
 function hashStr(s){
   let h=2166136261;
   for(let i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619); }
@@ -1403,6 +1425,100 @@ const RaceView = {
   }
 };
 
+/* ================================================================
+   TRAINING SESSION VIEW
+   The squad out on the ground you are training them on, working.
+   ================================================================ */
+const TRAIN_SECONDS = 7.5;      // how long a session takes to watch
+
+const TrainView = {
+  canvas:null, ctx:null, baked:null, view:null, course:null,
+  t:0, running:false, raf:0, onDone:null, runners:[], pops:[], label:"",
+
+  attach(canvas){
+    this.canvas=canvas;
+    canvas.width=CW; canvas.height=CH;
+    this.ctx=canvas.getContext("2d");
+    this.ctx.imageSmoothingEnabled=false;
+  },
+  setSession(course, rows, statKey, colour){
+    this.course=course;
+    this.view=courseView(course);
+    this.baked=bakeCourse(course,this.view);
+    this.label=STAT_BY_KEY[statKey].name.toUpperCase()+" SESSION";
+    this.colour=colour;
+    this.t=0;
+    // stronger runners lap quicker, so the group strings out naturally
+    this.runners = rows.map((row,i)=>({
+      name:row.name,
+      lap: 2.9 - (row.after/100)*0.9 + Math.random()*0.35,
+      off: i/rows.length + Math.random()*0.03,
+      phase: Math.random()*6.283,
+    }));
+    // a gain pops above a runner every so often through the session
+    this.pops = rows.map((row,i)=>({
+      i, at: 0.12 + (i/rows.length)*0.78 + Math.random()*0.05,
+      text: "+"+row.gain.toFixed(1),
+    }));
+    this.draw();
+  },
+  start(onDone){
+    this.onDone=onDone; this.running=true;
+    let last=performance.now();
+    const tick=(now)=>{
+      if(!this.running) return;
+      this.t += Math.min(0.1,(now-last)/1000); last=now;
+      this.draw();
+      if(this.t>=TRAIN_SECONDS){ this.running=false; if(this.onDone) this.onDone(); return; }
+      this.raf=requestAnimationFrame(tick);
+    };
+    this.raf=requestAnimationFrame(tick);
+  },
+  stop(){ this.running=false; cancelAnimationFrame(this.raf); },
+  skip(){ this.stop(); if(this.onDone) this.onDone(); },
+
+  draw(){
+    const c=this.ctx; if(!c||!this.course) return;
+    const prog = clamp(this.t/TRAIN_SECONDS,0,1);
+    c.fillStyle="#0b0e14"; c.fillRect(0,0,CW,CH);
+    c.drawImage(this.baked,0,0);
+
+    // header
+    c.fillStyle="#151b28"; c.fillRect(0,0,CW,20);
+    c.fillStyle="#39465f"; c.fillRect(0,20,CW,1);
+    drawText(c,this.label,4,7,"#f5c542");
+    const gr = this.course.venue;
+    drawText(c,gr,CW-4-textW(gr),7,"#8493ad");
+
+    // the squad, working their way round
+    this.runners.forEach((r,i)=>{
+      const f = (this.t/r.lap + r.off) % 1;
+      const a = this.course.posAt(f);
+      const p = proj(this.view,a);
+      // spread them across the width of the path so it reads as a group
+      const lane = Math.sin(this.t*0.9 + r.phase)*2.5 + ((i%3)-1)*2.4;
+      p.x += Math.cos(a.ang+Math.PI/2)*lane;
+      p.y += Math.sin(a.ang+Math.PI/2)*lane;
+      drawRunnerSprite(c, p.x, p.y, ((this.t*9+i)|0)&3, this.colour, null);
+      // the improvement popping up above them
+      const pop = this.pops[i];
+      if(pop && prog>=pop.at && prog<pop.at+0.16){
+        drawText(c,pop.text,Math.round(p.x)-8,Math.round(p.y)-9*RUNNER_SCALE-4,"#5fd35f");
+      }
+    });
+
+    // session progress
+    const bw=CW-16;
+    c.fillStyle="#0e1320"; c.fillRect(0,CH-22,CW,22);
+    c.fillStyle="#39465f"; c.fillRect(0,CH-22,CW,1);
+    drawText(c,"SESSION",8,CH-18,"#8493ad");
+    const pct=Math.round(prog*100)+"%";
+    drawText(c,pct,CW-8-textW(pct),CH-18,"#d9e2f2");
+    c.fillStyle="#222a3c"; c.fillRect(8,CH-9,bw,5);
+    c.fillStyle="#5fd35f"; c.fillRect(8,CH-9,Math.round(bw*prog),5);
+  }
+};
+
 /* static preview of a course (used on the race preview screen) */
 function drawCoursePreview(canvas, course){
   canvas.width=CW; canvas.height=CH;
@@ -1427,6 +1543,7 @@ const SAVE_VERSION = 3;
 let state = null;
 let liveRace = null;       // the running race object (never saved)
 let liveCourse = null;
+let liveTraining = null;   // the training session being watched (never saved)
 
 function newGame(clubName){
   _uid = 1;
@@ -1562,19 +1679,49 @@ const teamAverage = ()=>{
    SECTION 7 : GAME ACTIONS
    ================================================================ */
 
-function trainStat(key){
-  if(state.slots<=0 || !ownsPlotFor(key)) return;
+/* Do the work of a session: spend the slot, improve the whole squad,
+   and hand back what changed so it can be shown. */
+function applyTraining(key){
+  if(state.slots<=0 || !ownsPlotFor(key)) return null;
   state.slots--;
   let total=0;
-  state.runners.forEach(r=>{
-    const cur=r.stats[key];
-    const g = Math.max(0.15, 4.2*(1-cur/100)*(0.72+Math.random()*0.56));
-    r.stats[key]=clamp(cur+g,1,99);
-    total+=g;
+  const rows = state.runners.map(r=>{
+    const before = r.stats[key];
+    const g = Math.max(0.15, 4.2*(1-before/100)*(0.72+Math.random()*0.56));
+    r.stats[key] = clamp(before+g,1,99);
+    total += g;
+    return {id:r.id, name:r.name, before, after:r.stats[key], gain:r.stats[key]-before};
   });
-  state.trainLog.unshift({stat:key, avg:total/state.runners.length, week:state.week, season:state.season});
+  const avg = total/state.runners.length;
+  state.trainLog.unshift({stat:key, avg, week:state.week, season:state.season});
   state.trainLog=state.trainLog.slice(0,12);
+  return {stat:key, rows, avg};
+}
+
+/* instant version - no animation (used by the headless balance tests) */
+function trainStat(key){
+  const res = applyTraining(key);
+  if(res){ save(); render(); }
+  return res;
+}
+
+/* Take the squad out onto the relevant ground and watch them work. */
+function startTrainingSession(key){
+  const res = applyTraining(key);
+  if(!res) return;
+  liveTraining = {
+    stat: key,
+    result: res,
+    course: buildCourse(trainingVenue(key), hashStr(key)+state.week*13+state.season*7),
+    phase: "running",
+  };
+  state.screen = "trainsession";
   save(); render();
+}
+function finishTrainingSession(){
+  if(liveTraining) liveTraining.phase = "done";
+  TrainView.stop();
+  render();
 }
 
 function buyPlot(id){
@@ -1927,7 +2074,9 @@ function load(){
     _uid = s.uidSeed || 10000;
     if(s.v < SAVE_VERSION) migrateSave();
     state.raceState = state.raceState==="running" ? null : state.raceState;
-    liveRace=null; liveCourse=null;
+    // a session being watched is not saved, so come back to the training screen
+    if(state.screen==="trainsession") state.screen="training";
+    liveRace=null; liveCourse=null; liveTraining=null;
     return true;
   }catch(e){ return false; }
 }
@@ -2146,6 +2295,62 @@ function screenTraining(){
   <div class="panel">
     <h3>Recent sessions</h3>
     ${log}
+  </div>`;
+}
+
+/* ---- TRAINING SESSION ------------------------------------------ */
+function screenTrainSession(){
+  const T = liveTraining;
+  if(!T) return screenTraining();
+  const s = STAT_BY_KEY[T.stat];
+
+  if(T.phase==="running"){
+    return `
+    <div class="panel">
+      <div class="row spread">
+        <h2>${esc(s.name)} Session</h2>
+        <div class="row">
+          <span class="chip">Sessions left <b>${state.slots}</b></span>
+          <button data-act="skiptrain">Skip</button>
+        </div>
+      </div>
+      <div id="raceWrap"><canvas id="traincanvas"></canvas></div>
+      <p class="muted small" style="margin-top:8px">The whole squad is out on the
+        ${esc(TRAIN_GROUND[T.stat]?TRAIN_GROUND[T.stat].label.toLowerCase():"training ground")},
+        working on ${esc(s.name.toLowerCase())}. ${esc(s.desc)}.</p>
+    </div>`;
+  }
+
+  const rows = T.result.rows.slice().sort((a,b)=>b.gain-a.gain).map(r=>`
+    <tr>
+      <td>${esc(r.name)}</td>
+      <td class="num muted">${r.before.toFixed(1)}</td>
+      <td class="num">&rarr;</td>
+      <td class="num"><b>${r.after.toFixed(1)}</b></td>
+      <td class="num up">+${r.gain.toFixed(1)}</td>
+      <td>${pips(r.after)}</td>
+    </tr>`).join("");
+  const before = T.result.rows.reduce((a,r)=>a+r.before,0)/T.result.rows.length;
+  const after  = T.result.rows.reduce((a,r)=>a+r.after,0)/T.result.rows.length;
+
+  return `
+  <div class="banner good">${esc(s.name)} session done &mdash; squad ${before.toFixed(1)}
+    &rarr; ${after.toFixed(1)} (+${T.result.avg.toFixed(1)} average).</div>
+  <div class="panel">
+    <h2>What the session did</h2>
+    <table>
+      <tr><th>Runner</th><th>Before</th><th></th><th>After</th><th>Gain</th><th>${esc(s.name)}</th></tr>
+      ${rows}
+    </table>
+    <p class="muted small" style="margin-top:8px">Gains get smaller the closer an attribute is to 100,
+      so your weakest runners improve fastest.</p>
+  </div>
+  <div class="panel center">
+    ${state.slots>0
+      ? `<p>You have <b>${state.slots}</b> session${state.slots===1?"":"s"} left this week.</p>`
+      : `<p class="muted">No sessions left this week.</p>`}
+    <button class="primary" data-act="nav" data-arg="training">Back to Training</button>
+    ${state.slots===0?`<button data-act="nav" data-arg="race">On to Race Day &raquo;</button>`:""}
   </div>`;
 }
 
@@ -2554,6 +2759,7 @@ function render(){
   switch(state.screen){
     case "squad":    html=screenSquad(); break;
     case "training": html=screenTraining(); break;
+    case "trainsession": html=screenTrainSession(); break;
     case "shop":     html=screenShop(); break;
     case "league":   html=screenLeague(); break;
     case "season":   html=screenSeasonEnd(); break;
@@ -2570,6 +2776,15 @@ function render(){
   if(state.screen==="race" && state.raceState===null){
     const cv=document.getElementById("preview");
     if(cv) drawCoursePreview(cv, currentCourse());
+  }
+  if(state.screen==="trainsession" && liveTraining && liveTraining.phase==="running"){
+    const cv=document.getElementById("traincanvas");
+    if(cv){
+      TrainView.attach(cv);
+      TrainView.setSession(liveTraining.course, liveTraining.result.rows,
+                           liveTraining.stat, state.club.colour);
+      TrainView.start(()=>finishTrainingSession());
+    }
   }
   if(state.screen==="race" && state.raceState==="running"){
     const cv=document.getElementById("racecanvas");
@@ -2590,12 +2805,14 @@ document.addEventListener("click", e=>{
   switch(act){
     case "nav":
       if(state.raceState==="running") return;
+      TrainView.stop(); liveTraining=null;
       state.screen=arg; save(); render(); break;
     case "up":        moveInOrder(+arg,-1); break;
     case "down":      moveInOrder(+arg, 1); break;
     case "auto":         autoOrder(); break;
     case "autotactics":  autoTactics(); break;
-    case "train":     trainStat(arg); break;
+    case "train":     startTrainingSession(arg); break;
+    case "skiptrain": TrainView.skip(); break;
     case "buyplot":   buyPlot(arg); break;
     case "buyshoe":   buyShoe(arg); break;
     case "buybuilding": buyBuilding(arg); break;
