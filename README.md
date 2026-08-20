@@ -157,6 +157,23 @@ exposed ridge, and the improvements pop up over each runner's head as they earn 
 get the full before-and-after for all ten. Click the title card to get going early, or **Skip**
 straight to the numbers.
 
+### Transfers
+
+**Transfers** lets you scout every club in your league — their full squads, all eight attributes per
+runner, their age and what the club wants for them.
+
+Every deal is a **swap plus cash**: one of yours for one of theirs, so both squads stay at ten and
+your running order keeps its shape. Runner values climb steeply with quality (an average runner is
+worth around £1,900, a very good one over £5,000) and drop off for veterans. Clubs ask a premium for
+anyone in their top three, and they haggle — matching the asking price usually gets it done, but not
+always. A turned-down bid costs you nothing, so you can go again with more.
+
+Clubs come to you too. Between races one may make an offer for a runner you'd probably rather keep,
+putting one of theirs plus cash on the table — it shows as a red badge on the Transfers tab, with
+both runners' stats side by side so you can see exactly what you'd be getting and losing.
+
+Each club will only do business with you **once a season**, so you can't churn one squad for parts.
+
 ### Leagues and seasons
 
 Five tiers: Village Fun Run → District → County → Regional → National. A season is six races against

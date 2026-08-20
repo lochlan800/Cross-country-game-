@@ -1702,7 +1702,7 @@ function drawCoursePreview(canvas, course){
    SECTION 6 : GAME STATE
    ================================================================ */
 const SAVE_KEY = "xcmanager_save_v1";
-const SAVE_VERSION = 4;
+const SAVE_VERSION = 5;
 
 let state = null;
 let liveRace = null;       // the running race object (never saved)
@@ -1728,6 +1728,8 @@ function newGame(clubName){
     plots: PLOTS.reduce((o,p)=>{ o[p.id] = p.start?1:0; return o; },{}),
     buildings: {},
     builtAt: {},
+    offers: [],
+    dealtWith: [],
     inventory,
     slots: TRAINING_SLOTS,
     rivals: [],
@@ -1816,6 +1818,136 @@ function facilityBonuses(atHome){
   });
   return f;
 }
+/* ================================================================
+   TRANSFERS
+   Every deal is a straight swap plus cash, so both squads stay at ten.
+   ================================================================ */
+const TRANSFER_BASE = 1200;   // what an average runner is worth
+const TRANSFER_POW  = 2.6;    // how steeply value climbs with quality
+
+function runnerValue(r){
+  let t=0; STAT_KEYS.forEach(k=>t+=r.stats[k]);
+  const avg = t/STAT_KEYS.length;
+  let v = Math.pow(avg/50, TRANSFER_POW) * TRANSFER_BASE;
+  // a runner in their mid twenties is worth most
+  const age = r.age||24;
+  v *= age<=21 ? 1.06 : (age<=27 ? 1.0 : (age<=30 ? 0.86 : 0.66));
+  return Math.max(60, Math.round(v/10)*10);
+}
+const squadRank = (club, r) => club.runners.slice()
+  .sort((a,b)=>runnerValue(b)-runnerValue(a)).findIndex(x=>x.id===r.id);
+
+/* How a club values letting one of theirs go. They want a premium,
+   and more of one for a runner they lean on. */
+function askingPrice(club, r){
+  const key = squadRank(club, r) < 3 ? 1.28 : 1.08;
+  return Math.round(runnerValue(r) * key);
+}
+const dealtThisSeason = clubId => (state.dealtWith||[]).includes(clubId);
+
+/* Judge an offer of (yourRunner + cash) for (theirRunner). */
+function judgeOffer(club, theirRunner, myRunner, cash){
+  // they haggle around the asking price, so matching it usually lands
+  // but not always - a rejected bid costs you nothing, so you can go again
+  const want = askingPrice(club, theirRunner) * (0.90 + Math.random()*0.15);
+  const gain = runnerValue(myRunner) + cash;
+  const accept = gain >= want;
+  return {accept, want:Math.round(want), gain:Math.round(gain),
+          shortBy:Math.max(0, Math.round(want-gain))};
+}
+
+function doSwap(club, theirRunner, myRunner, cash){
+  state.money -= cash;
+  const mine = state.runners.findIndex(r=>r.id===myRunner.id);
+  const theirs = club.runners.findIndex(r=>r.id===theirRunner.id);
+  if(mine<0 || theirs<0) return false;
+  state.runners[mine] = theirRunner;
+  club.runners[theirs] = myRunner;
+  // keep the running order intact, with the new face in the same leg
+  const oi = state.order.indexOf(myRunner.id);
+  if(oi>=0) state.order[oi] = theirRunner.id;
+  // boots stay with the club
+  const pair = state.inventory.find(p=>p.uid===myRunner.shoeUid);
+  if(pair) pair.wornBy = null;
+  myRunner.shoeUid = null;
+  theirRunner.shoeUid = null;
+  if(!theirRunner.tactic) theirRunner.tactic = DEFAULT_TACTIC;
+  state.dealtWith = state.dealtWith||[];
+  if(!state.dealtWith.includes(club.id)) state.dealtWith.push(club.id);
+  return true;
+}
+
+/* you approach them */
+function submitOffer(clubId, targetId, giveId, cash){
+  const club = clubById(clubId);
+  const target = club && club.runners.find(r=>r.id===targetId);
+  const mine = state.runners.find(r=>r.id===giveId);
+  if(!club || !target || !mine) return {ok:false, msg:"That deal is no longer available."};
+  if(dealtThisSeason(clubId))
+    return {ok:false, msg:`${club.name} have already done business with you this season.`};
+  cash = clamp(Math.round(cash||0), 0, state.money);
+  const j = judgeOffer(club, target, mine, cash);
+  if(!j.accept){
+    return {ok:false, msg:`${club.name} turned it down. They value ${target.name} at about `
+      + `${money(j.want)} and rate your offer at ${money(j.gain)} `
+      + `&mdash; roughly ${money(j.shortBy)} short.`};
+  }
+  doSwap(club, target, mine, cash);
+  save();
+  return {ok:true, msg:`Done. ${esc(target.name)} joins from ${esc(club.name)}, `
+    + `${esc(mine.name)} goes the other way${cash?` and you paid ${money(cash)}`:""}.`};
+}
+
+/* they approach you */
+function makeIncomingOffer(){
+  const clubs = state.rivals.filter(c=>!dealtThisSeason(c.id));
+  if(!clubs.length) return null;
+  const club = pick(clubs);
+  // they go after one of your better runners
+  const mine = state.runners.slice().sort((a,b)=>runnerValue(b)-runnerValue(a));
+  const want = mine[ri(0, Math.min(4, mine.length-1))];
+  // and offer someone of theirs, usually a bit less good, plus cash
+  const theirs = club.runners.slice().sort((a,b)=>runnerValue(b)-runnerValue(a));
+  const give = theirs[ri(0, theirs.length-1)];
+  if(!want || !give || give.id===want.id) return null;
+  const diff = runnerValue(want) - runnerValue(give);
+  const cash = Math.max(0, Math.round(diff * (0.75 + Math.random()*0.65) / 10) * 10);
+  return {
+    id: uid(), clubId: club.id, wantId: want.id, giveId: give.id, cash,
+    season: state.season, week: state.week,
+  };
+}
+const OFFER_CHANCE = 0.42;    // roughly how often a club comes calling in a week
+function maybeIncomingOffer(){
+  state.offers = state.offers || [];
+  if(state.offers.length >= 3) return;
+  if(Math.random() > OFFER_CHANCE) return;
+  const o = makeIncomingOffer();
+  if(o) state.offers.push(o);
+}
+
+function acceptIncoming(offerId){
+  const o = (state.offers||[]).find(x=>x.id===offerId);
+  if(!o) return;
+  const club = clubById(o.clubId);
+  const mine = state.runners.find(r=>r.id===o.wantId);
+  const give = club && club.runners.find(r=>r.id===o.giveId);
+  if(club && mine && give){
+    doSwap(club, give, mine, -o.cash);      // negative cash = they pay you
+  }
+  state.offers = state.offers.filter(x=>x.id!==offerId);
+  transferMsg = club && mine && give
+    ? `Deal done. ${give.name} joins from ${club.name}, ${mine.name} leaves`
+      + (o.cash?` and they paid you ${money(o.cash)}`:"") + "."
+    : "That offer has expired.";
+  save(); render();
+}
+function rejectIncoming(offerId){
+  state.offers = (state.offers||[]).filter(x=>x.id!==offerId);
+  transferMsg = "Offer turned down.";
+  save(); render();
+}
+
 /* ---- the ground you own ---------------------------------------- */
 const infraCount = id => (state.buildings && state.buildings[id]) || 0;
 const standCount = () => infraCount("stand");
@@ -1891,6 +2023,8 @@ function playerCtx(atHome){
 }
 const ownsPlotFor = stat => PLOTS.some(p=>p.stat===stat && plotLevel(p.id)>0);
 const orderedRunners = ()=>state.order.map(id=>state.runners.find(r=>r.id===id)).filter(Boolean);
+const avgStat = r => STAT_KEYS.reduce((a,k)=>a+r.stats[k],0)/STAT_KEYS.length;
+const clubAverage = c => c.runners.reduce((a,r)=>a+avgStat(r),0)/c.runners.length;
 const teamAverage = ()=>{
   let t=0;
   state.runners.forEach(r=>STAT_KEYS.forEach(k=>t+=r.stats[k]));
@@ -2217,6 +2351,7 @@ function continueAfterRace(){
     endSeason();
   }else{
     state.slots = TRAINING_SLOTS;
+    maybeIncomingOffer();          // a club might come calling this week
     state.screen="training";
   }
   save(); render();
@@ -2264,6 +2399,8 @@ function startNextSeason(){
   buildFixtures();
   state.seasonEnd=null;
   state.lastResult=null;
+  state.offers=[];               // last season's business is closed
+  state.dealtWith=[];
   state.screen="squad";
   save(); render();
 }
@@ -2356,6 +2493,11 @@ function migrateSave(){
       if(state.builtAt[id]===undefined) state.builtAt[id] = state.season;
     });
   }
+  if(state.v < 5){
+    // v4 predates transfers
+    state.offers = state.offers || [];
+    state.dealtWith = state.dealtWith || [];
+  }
   state.v = SAVE_VERSION;
   save();
 }
@@ -2373,6 +2515,7 @@ const SCREENS = [
   {id:"squad",    label:"Squad"},
   {id:"training", label:"Training"},
   {id:"ground",   label:"My Ground"},
+  {id:"transfers",label:"Transfers"},
   {id:"shop",     label:"Shop"},
   {id:"league",   label:"League"},
   {id:"race",     label:"Race Day"},
@@ -2458,7 +2601,9 @@ function renderNav(){
   if(state.screen==="season"){ nav.innerHTML=""; return; }
   nav.innerHTML = SCREENS.map(s=>
     `<button data-act="nav" data-arg="${s.id}" class="${state.screen===s.id?"on":""}">${s.label}${
-      s.id==="training"&&state.slots>0?` (${state.slots})`:""}</button>`).join("")
+      s.id==="training"&&state.slots>0?` (${state.slots})`:""}${
+      s.id==="transfers"&&(state.offers||[]).length?` <b class="blink" style="color:var(--red)">${state.offers.length}</b>`:""
+    }</button>`).join("")
     + `<button data-act="wipe" class="danger small" style="margin-left:auto">New Club</button>`;
 }
 
@@ -2558,6 +2703,132 @@ function screenTraining(){
     <h3>Recent sessions</h3>
     ${log}
   </div>`;
+}
+
+/* ---- TRANSFERS -------------------------------------------------- */
+let tv = {clubId:null, targetId:null, giveId:null, cash:0};
+let transferMsg = null;
+
+function statRow(r){
+  return STAT_KEYS.map(k=>`<td>${pips(r.stats[k])} <span class="statval">${Math.round(r.stats[k])}</span></td>`).join("");
+}
+
+function screenTransfers(){
+  const offers = state.offers||[];
+  const club = tv.clubId ? clubById(tv.clubId) : null;
+
+  // --- offers that have come in to you ------------------------------
+  const inbox = offers.map(o=>{
+    const c = clubById(o.clubId);
+    const mine = state.runners.find(r=>r.id===o.wantId);
+    const give = c && c.runners.find(r=>r.id===o.giveId);
+    if(!c||!mine||!give) return "";
+    const swing = runnerValue(give)+o.cash - runnerValue(mine);
+    return `<div class="panel2">
+      <div class="row spread">
+        <b>${esc(c.name)} want ${esc(mine.name)}</b>
+        <span class="${swing>=0?"up":"down"} small">${swing>=0?"+":""}${money(swing)} of value to you</span>
+      </div>
+      <p class="small" style="margin:6px 0">They offer <b>${esc(give.name)}</b>
+        (${Math.round(avgStat(give))} avg, ${give.age})${o.cash?` and <b class="up">${money(o.cash)}</b>`:""}
+        for your <b>${esc(mine.name)}</b> (${Math.round(avgStat(mine))} avg, ${mine.age}).</p>
+      <table><tr><th>Runner</th>${STATS.map(s=>`<th>${s.short}</th>`).join("")}<th>Value</th></tr>
+        <tr><td>${esc(give.name)} <span class="tag good">in</span></td>${statRow(give)}<td class="num">${money(runnerValue(give))}</td></tr>
+        <tr><td>${esc(mine.name)} <span class="tag bad">out</span></td>${statRow(mine)}<td class="num">${money(runnerValue(mine))}</td></tr>
+      </table>
+      <div class="row" style="margin-top:6px">
+        <button class="primary" data-act="acceptoffer" data-arg="${o.id}">Accept</button>
+        <button data-act="rejectoffer" data-arg="${o.id}">Turn down</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  // --- browsing a club ----------------------------------------------
+  let browser = "";
+  if(club){
+    const done = dealtThisSeason(club.id);
+    browser = `
+    <div class="panel">
+      <div class="row spread">
+        <h3><span class="swatch" style="background:${club.colour}"></span> ${esc(club.name)}</h3>
+        <span class="muted small">Squad average ${Math.round(clubAverage(club))}</span>
+      </div>
+      ${done?`<div class="banner">You have already done business with ${esc(club.name)} this season.</div>`:""}
+      <div style="overflow-x:auto">
+      <table>
+        <tr><th>Runner</th><th>Age</th>${STATS.map(s=>`<th title="${esc(s.desc)}">${s.short}</th>`).join("")}
+            <th>Asking</th><th></th></tr>
+        ${club.runners.slice().sort((a,b)=>runnerValue(b)-runnerValue(a)).map(r=>`
+          <tr class="${tv.targetId===r.id?"me":""}">
+            <td class="runner"><b>${esc(r.name)}</b><br><span class="muted small">${esc(r.archetype||"Runner")}</span></td>
+            <td class="num">${r.age}</td>
+            ${statRow(r)}
+            <td class="num"><b>${money(askingPrice(club,r))}</b></td>
+            <td>${done?"":`<button class="small" data-act="target" data-arg="${r.id}">Bid</button>`}</td>
+          </tr>`).join("")}
+      </table>
+      </div>
+    </div>`;
+  }
+
+  // --- the offer you are putting together ---------------------------
+  let builder = "";
+  if(club && tv.targetId && !dealtThisSeason(club.id)){
+    const target = club.runners.find(r=>r.id===tv.targetId);
+    if(target){
+      const give = state.runners.find(r=>r.id===tv.giveId) || null;
+      const ask = askingPrice(club, target);
+      const gap = give ? Math.max(0, ask - runnerValue(give)) : ask;
+      builder = `
+      <div class="panel">
+        <h3>Your offer for ${esc(target.name)}</h3>
+        <p class="muted small">${esc(club.name)} are asking about <b>${money(ask)}</b> of value.
+          Pick a runner to send the other way and add cash to make up the difference. They haggle,
+          so matching the asking price usually gets it done but not always &mdash; a turned-down bid
+          costs you nothing, so you can always go again with more.</p>
+        <div class="row">
+          <span class="muted small">Send them</span>
+          <select data-act="give">
+            <option value="">&mdash; choose a runner &mdash;</option>
+            ${state.runners.map(r=>`<option value="${r.id}" ${r.id===tv.giveId?"selected":""}>
+              ${esc(r.name)} (${Math.round(avgStat(r))} avg &middot; ${money(runnerValue(r))})</option>`).join("")}
+          </select>
+          <span class="muted small">plus cash</span>
+          <input type="number" data-act="cash" value="${tv.cash}" min="0" max="${Math.round(state.money)}" step="50"
+                 style="width:110px;font-family:inherit;background:var(--panel2);color:var(--ink);border:2px solid var(--line);padding:2px 4px">
+          <button class="small" data-act="fillgap" data-arg="${gap}">Match asking price (${money(gap)})</button>
+          <button class="small" data-act="fillgap" data-arg="${Math.round(gap*1.15)}">Bid over (${money(Math.round(gap*1.15))})</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <span class="chip">You offer <b>${money((give?runnerValue(give):0) + (+tv.cash||0))}</b></span>
+          <span class="chip">They want <b>${money(ask)}</b></span>
+          <span class="chip money">Your cash <b>${money(state.money)}</b></span>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="primary" data-act="sendoffer" ${give && (+tv.cash||0)<=state.money?"":"disabled"}>Send offer</button>
+          <button data-act="canceloffer">Cancel</button>
+        </div>
+      </div>`;
+    }
+  }
+
+  return `
+  ${transferMsg?`<div class="banner ${/Done|joins/.test(transferMsg)?"good":""}">${transferMsg}</div>`:""}
+  ${offers.length?`<div class="panel"><h2>Offers in for your runners</h2>${inbox}</div>`:""}
+  <div class="panel">
+    <div class="row spread">
+      <h2>Transfer Market</h2>
+      <span class="chip money">Cash <b>${money(state.money)}</b></span>
+    </div>
+    <p class="muted small">Every deal is a swap: one of yours for one of theirs, plus cash if they
+      want more. Each club will only do business with you once a season.</p>
+    <div class="row">
+      ${state.rivals.map(c=>`<button data-act="viewclub" data-arg="${c.id}"
+        class="${tv.clubId===c.id?"on":""}">${esc(c.code)}${dealtThisSeason(c.id)?" &check;":""}</button>`).join("")}
+    </div>
+  </div>
+  ${browser}
+  ${builder}`;
 }
 
 /* ---- MY GROUND -------------------------------------------------- */
@@ -3129,6 +3400,7 @@ function render(){
     case "training": html=screenTraining(); break;
     case "trainsession": html=screenTrainSession(); break;
     case "ground":   html=screenGround(); break;
+    case "transfers":html=screenTransfers(); break;
     case "shop":     html=screenShop(); break;
     case "league":   html=screenLeague(); break;
     case "season":   html=screenSeasonEnd(); break;
@@ -3198,6 +3470,23 @@ document.addEventListener("click", e=>{
     case "skip":      RaceView.skip(); break;
     case "continue":  continueAfterRace(); break;
     case "nextseason":startNextSeason(); break;
+    case "viewclub":
+      tv = {clubId:+arg, targetId:null, giveId:null, cash:0};
+      transferMsg=null; render(); break;
+    case "target":
+      tv.targetId=+arg; tv.giveId=null; tv.cash=0; transferMsg=null; render(); break;
+    case "fillgap":
+      tv.cash = Math.min(Math.round(state.money), +arg||0); render(); break;
+    case "canceloffer":
+      tv.targetId=null; tv.giveId=null; tv.cash=0; render(); break;
+    case "sendoffer": {
+      const res = submitOffer(tv.clubId, tv.targetId, tv.giveId, +tv.cash||0);
+      transferMsg = res.msg;
+      if(res.ok){ tv.targetId=null; tv.giveId=null; tv.cash=0; }
+      render(); break;
+    }
+    case "acceptoffer": acceptIncoming(+arg); break;
+    case "rejectoffer": rejectIncoming(+arg); break;
     case "wipe":      wipeSave(); break;
   }
 });
@@ -3208,6 +3497,10 @@ document.addEventListener("change", e=>{
   if(tac){ setTactic(+tac.dataset.arg, tac.value); return; }
   const all=e.target.closest("[data-act='tacticall']");
   if(all && all.value){ setAllTactics(all.value); return; }
+  const give=e.target.closest("[data-act='give']");
+  if(give){ tv.giveId = give.value?+give.value:null; render(); return; }
+  const cash=e.target.closest("[data-act='cash']");
+  if(cash){ tv.cash = clamp(Math.round(+cash.value||0), 0, Math.round(state.money)); render(); return; }
 });
 
 /* ================================================================
@@ -3232,6 +3525,8 @@ window.XCM = {
   startRace, finishRace, continueAfterRace, trainStat, buyPlot, buyShoe, render,
   aiOrder, orderedRunners, playerCtx, save, load, SQUAD_SIZE, STAT_KEYS,
   autoPlayRace, autoOrder, autoTactics, sortedTable, ownsPlotFor, PLOTS, PLOT_BY_STAT, SHOES,
+  runnerValue, askingPrice, judgeOffer, submitOffer, makeIncomingOffer, maybeIncomingOffer,
+  acceptIncoming, rejectIncoming, clubById, avgStat, clubAverage,
   TACTICS, rollExecution, tacticProfile, stepRace, setTactic, setAllTactics,
   INFRA, INFRA_BY_ID, buyBuilding, homeBoost, raceDayIncome, expectedIncome,
   infraCount, infraCost, standCount, plotLevel, plotCost, PLOT_MAX_LEVEL, STAND_BOOST,
