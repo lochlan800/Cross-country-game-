@@ -715,6 +715,7 @@ function buildCourse(venue, seed){
 
   return {
     venue:venue.name, code:venue.code, lengthM:venue.len,
+    stadiumLevel: venue.stadiumLevel||0, giftShop: !!venue.giftShop,
     pts, cum, totalNorm, segments,
     segAt(frac){
       let f=frac%1; if(f<0)f+=1;
@@ -792,6 +793,8 @@ function playerHomeVenue(){
     exposure: ownsPlotFor("wind") ? 0.55 : 0.10,
     home: true,
     plotsBuilt: owned,
+    stadiumLevel: bestStadium() ? bestStadium().level : 0,
+    giftShop: hasBuilding(GIFT_SHOP.id),
   };
 }
 
@@ -1091,6 +1094,68 @@ function drawRunnerSprite(ctx, x, y, frame, colour, halo){
   }
 }
 
+/* ---- the buildings on your own ground --------------------------
+   Drawn beside the finishing straight, oriented along the track, so
+   the stand you paid for is actually there on race day.            */
+const STAND_SPEC = [
+  {len:18, dep:7,  rows:3, name:"terrace"},   // Clubhouse & Terrace
+  {len:28, dep:10, rows:4, name:"grandstand"},
+  {len:40, dep:13, rows:5, name:"stadium"},
+];
+const CROWD_COLS = ["#e0574a","#4f9de0","#f5c542","#5fd35f","#d9e2f2","#9b6fd4","#e08a3c","#48c2a8"];
+
+function drawGround(c, course, view){
+  if(!course.stadiumLevel && !course.giftShop) return;
+  const sp = course.posAt(0);
+  const p  = proj(view, sp);
+  const tx = Math.cos(sp.ang),          ty = Math.sin(sp.ang);            // along the track
+  const ox = -Math.cos(sp.ang+Math.PI/2), oy = -Math.sin(sp.ang+Math.PI/2); // away from the loop
+  const rng = mulberry32(hashStr(course.venue)+7);
+  const px = (u,v)=>({x:Math.round(p.x+tx*u+ox*v), y:Math.round(p.y+ty*u+oy*v)});
+
+  if(course.stadiumLevel){
+    const s = STAND_SPEC[clamp(course.stadiumLevel,1,3)-1];
+    const front = 13;                                  // clear of the track
+    for(let u=-s.len/2; u<=s.len/2; u++){
+      for(let v=0; v<s.dep; v++){
+        const q = px(u, front+v);
+        let col;
+        if(v < s.rows){
+          // banked rows of spectators facing the track
+          col = rng()<0.55 ? CROWD_COLS[(rng()*CROWD_COLS.length)|0] : "#39465f";
+        }else if(v === s.rows){
+          col = "#39465f";                              // the barrier
+        }else{
+          col = (u%2===0) ? "#39424f" : "#2e3846";      // stand structure
+        }
+        c.fillStyle = col; c.fillRect(q.x, q.y, 1, 1);
+      }
+    }
+    // roof lip along the back
+    for(let u=-s.len/2; u<=s.len/2; u++){
+      const q = px(u, front+s.dep);
+      c.fillStyle="#1d2430"; c.fillRect(q.x,q.y,1,1);
+    }
+    // floodlights on the big one
+    if(course.stadiumLevel===3){
+      [-s.len/2-3, s.len/2+3].forEach(u=>{
+        for(let v=0;v<4;v++){ const q=px(u,front+2+v); c.fillStyle="#5a6a86"; c.fillRect(q.x,q.y,1,1); }
+        const q=px(u,front+6); c.fillStyle="#fff8c0"; c.fillRect(q.x-1,q.y-1,3,2);
+      });
+    }
+  }
+
+  if(course.giftShop){
+    // a little hut with a striped awning, just along from the stand
+    const base = (course.stadiumLevel?STAND_SPEC[course.stadiumLevel-1].len/2:0) + 8;
+    for(let u=0; u<7; u++) for(let v=0; v<6; v++){
+      const q = px(base+u, 13+v);
+      c.fillStyle = v<2 ? ((u%2===0)?"#e0574a":"#f5e6c8") : (v===5?"#2e3846":"#6b5340");
+      c.fillRect(q.x,q.y,1,1);
+    }
+  }
+}
+
 /* a badge on the course itself when it is your own ground */
 function drawHomeBadge(c){
   const label = "HOME COURSE";
@@ -1177,6 +1242,8 @@ function bakeCourse(course, view){
     c.fillStyle="#8fa8c9";
     c.fillRect(x-2,y,5,1); c.fillRect(x+1,y-1,1,1); c.fillRect(x+1,y+1,1,1);
   }
+  // your own stand and gift shop, beside the finishing straight
+  drawGround(c, course, view);
   // start / finish line
   const sp = course.posAt(0), spp = proj(view,sp);
   const nx=Math.cos(sp.ang+Math.PI/2), ny=Math.sin(sp.ang+Math.PI/2);
@@ -1633,15 +1700,19 @@ function venueForFixture(fx){
 }
 
 function currentCourse(){
-  const plotCount = state.plots.length;   // buying terrain changes your home course
+  // buying terrain or building a stand changes your home course, so both
+  // count towards the cache key or you would not see what you just bought
+  const plotCount = state.plots.length;
+  const buildCount = (state.buildings||[]).length;
   if(liveCourse && liveCourse._week===state.week && liveCourse._season===state.season
-     && liveCourse._plots===plotCount) return liveCourse;
+     && liveCourse._plots===plotCount && liveCourse._builds===buildCount) return liveCourse;
   const fx = state.fixtures[state.week];
   const venue = venueForFixture(fx);
   liveCourse = buildCourse(venue, hashStr(venue.name)+state.season*97+state.week*13);
   liveCourse.isHome = !!(fx && fx.hostId===state.club.id);
   liveCourse.hostName = fx ? (clubById(fx.hostId)||state.club).name : state.club.name;
-  liveCourse._week=state.week; liveCourse._season=state.season; liveCourse._plots=plotCount;
+  liveCourse._week=state.week; liveCourse._season=state.season;
+  liveCourse._plots=plotCount; liveCourse._builds=buildCount;
   return liveCourse;
 }
 
