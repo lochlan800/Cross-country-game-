@@ -398,7 +398,15 @@ const PLOTS = [
   {id:"ridge",   stat:"wind",      name:"Exposed Ridge",     cost:1100, desc:"Nowhere to hide from the wind."},
 ];
 const PLOT_BY_STAT = {}; PLOTS.forEach(p=>PLOT_BY_STAT[p.stat]=p);
-const FACILITY_BONUS = 3;      // permanent stat bonus for owning the plot
+const FACILITY_BONUS = 3;      // permanent stat bonus for owning that terrain
+const PLOT_MAX_LEVEL = 5;      // how many times you can buy the same ground
+/* Extra pieces of the same ground give a fast-diminishing stat bonus -
+   otherwise stacking terrain becomes a blunt boost that wins away races
+   too, which is not what it is for. What they really buy is a better
+   facility: more of that ground in your home course, and better
+   training on it.                                                    */
+const FACILITY_STEPS = [0, 3, 4.5, 5.5, 6.3, 7.0];
+const TRAIN_QUALITY  = 0.14;   // per extra level, how much better sessions are
 const HOME_FACILITY_MULT = 2;  // ...which counts double on your own ground
 
 /* ---- home advantage --------------------------------------------
@@ -406,25 +414,50 @@ const HOME_FACILITY_MULT = 2;  // ...which counts double on your own ground
    A flat 8% on speed would be enormous - the whole speed attribute,
    0 to 100, is only worth a 16% swing - so "8% better at home" is
    applied to what the runners are made of instead.               */
-const HOME_BOOST    = 0.08;   // racing on your own ground
-const STADIUM_BOOST = 0.08;   // ...with a crowd in a stand behind you
+const HOME_BOOST  = 0.08;   // racing on your own ground
+const STAND_BOOST = 0.02;   // ...and each stand you put up behind them
 
-/* ---- the ground itself ------------------------------------------
-   Stands cost a fortune and only pay you back on home race day, but
-   the crowd lifts the team and the takings grow with the league.  */
-const STADIUMS = [
-  {id:"clubhouse",  name:"Clubhouse & Terrace", cost:2000,  level:1, gate:150,
-   desc:"A hut, a rope and somewhere to put the urn."},
-  {id:"grandstand", name:"Grandstand",          cost:6000,  level:2, gate:480,
-   desc:"Proper seating. People turn up early for a spot."},
-  {id:"mainstand",  name:"Main Stadium",        cost:15000, level:3, gate:1200,
-   desc:"A real arena. The noise on the finishing straight is something else."},
+/* ---- infrastructure ---------------------------------------------
+   Everything here can be bought over and over - the whole point is
+   to keep building the ground bigger. Each one you own costs more
+   than the last.
+     boost   : extra home advantage per unit
+     ticket  : money per HOME race, picked at random inside the range
+     weekly  : money every race week (home or away)
+     tv      : money per race, and it climbs steeply with the league
+     grows   : income multiplies the longer you have owned it
+     gateUp  : lifts ticket income by this much per unit             */
+const INFRA = [
+  {id:"stand", name:"Grandstand", base:2500, growth:1.55, max:14,
+   boost:STAND_BOOST, ticket:[140,380], homeOnly:true,
+   desc:"More seats, more noise. Every stand lifts the squad at home and sells more tickets."},
+
+  {id:"foodtruck", name:"Food Truck Pitch", base:900, growth:1.34, max:12,
+   weekly:[35,95], homeMult:3, tierScale:0.25,
+   desc:"They pay you for the pitch. A few quid every week, proper money on home race day."},
+
+  {id:"giftshop", name:"Club Gift Shop", base:2500, growth:1.5, max:8,
+   weekly:[55,95], homeMult:3, tierScale:0.45,
+   desc:"Vests, bobble hats and mugs. Ticks over all week, roaring trade on race day."},
+
+  {id:"band", name:"Live Band", base:3500, growth:1.5, max:8,
+   gateUp:0.18, weekly:[20,60], tierScale:0.3,
+   desc:"People come for the day out, not just the running. Sells a lot more tickets."},
+
+  {id:"social", name:"Social Media Team", base:5000, growth:1.6, max:8,
+   weekly:[190,290], tierScale:0.5,
+   desc:"Clips, highlights, sponsors sliding into the inbox. Mid price, earns very well."},
+
+  {id:"bigscreen", name:"Big Screen", base:9000, growth:1.7, max:6,
+   weekly:[45,75], tierScale:0.3, grows:0.40,
+   desc:"Slow to pay for itself, but the advertising on it is worth more every season you own it."},
+
+  {id:"camera", name:"Camera Crew & Rig", base:18000, growth:1.8, max:6,
+   tv:[180,320], tierScale:1.35,
+   desc:"Brutally expensive. But broadcasters pay for cross country, and they pay far more the higher you climb."},
 ];
-const GIFT_SHOP = {
-  id:"giftshop", name:"Club Gift Shop", cost:2500, weekly:70,
-  desc:"Vests, bobble hats and mugs. Ticks over all week and does a roaring trade on race day.",
-};
-const GIFT_HOME_MULT = 3;     // race day at home is the big earner
+const INFRA_BY_ID = {}; INFRA.forEach(i=>INFRA_BY_ID[i.id]=i);
+const PLOT_GROWTH = 1.7;    // each extra piece of the same terrain costs more
 
 /* ---- shoes ---------------------------------------------------- */
 const SHOES = {
@@ -715,7 +748,7 @@ function buildCourse(venue, seed){
 
   return {
     venue:venue.name, code:venue.code, lengthM:venue.len,
-    stadiumLevel: venue.stadiumLevel||0, giftShop: !!venue.giftShop,
+    infra: venue.infra || null,
     pts, cum, totalNorm, segments,
     segAt(frac){
       let f=frac%1; if(f<0)f+=1;
@@ -774,16 +807,26 @@ const PLOT_TERRAIN = {mud:"mud", hills:"hill", longGrass:"longGrass", uneven:"un
 function playerHomeVenue(){
   const mix = {flat:16};
   let owned = 0;
-  state.plots.forEach(id=>{
-    const p = PLOTS.find(x=>x.id===id);
-    if(!p) return;
+  // every piece of terrain you own puts more of that ground in your loop
+  PLOTS.forEach(p=>{
+    const lvl = plotLevel(p.id);
     const terr = PLOT_TERRAIN[p.stat];
-    if(!terr) return;
-    mix[terr] = (mix[terr]||0) + 3;
-    mix.flat -= 3;
+    if(!lvl || !terr) return;
+    const want = Math.min(3*lvl, 6);          // one terrain can't swallow the loop
+    mix[terr] = (mix[terr]||0) + want;
+    mix.flat -= want;
     owned++;
   });
-  if(mix.flat<1){ mix.flat = 1; }
+  if(mix.flat<1){
+    // too much bought - trim the biggest sections back so it still adds up
+    let over = 1-mix.flat;
+    const keys = Object.keys(mix).filter(k=>k!=="flat").sort((a,b)=>mix[b]-mix[a]);
+    while(over>0 && keys.length){
+      for(const k of keys){ if(over<=0) break; if(mix[k]>2){ mix[k]--; over--; } }
+      if(keys.every(k=>mix[k]<=2)) break;
+    }
+    mix.flat = 1;
+  }
   return {
     name: clubPlace(state.club.name)+" Home Ground",
     code: "HOM",
@@ -793,8 +836,7 @@ function playerHomeVenue(){
     exposure: ownsPlotFor("wind") ? 0.55 : 0.10,
     home: true,
     plotsBuilt: owned,
-    stadiumLevel: bestStadium() ? bestStadium().level : 0,
-    giftShop: hasBuilding(GIFT_SHOP.id),
+    infra: Object.assign({}, state.buildings||{}),
   };
 }
 
@@ -1117,64 +1159,104 @@ function drawRunnerSprite(ctx, x, y, frame, colour, halo){
 }
 
 /* ---- the buildings on your own ground --------------------------
-   Drawn beside the finishing straight, oriented along the track, so
-   the stand you paid for is actually there on race day.            */
-const STAND_SPEC = [
-  {len:18, dep:7,  rows:3, name:"terrace"},   // Clubhouse & Terrace
-  {len:28, dep:10, rows:4, name:"grandstand"},
-  {len:40, dep:13, rows:5, name:"stadium"},
-];
-const CROWD_COLS = ["#e0574a","#4f9de0","#f5c542","#5fd35f","#d9e2f2","#9b6fd4","#e08a3c","#48c2a8"];
+   Everything you have built is drawn round the outside of the loop,
+   oriented to the track, so the ground grows as you spend on it.  */
+const CROWD_COLS =["#e0574a","#4f9de0","#f5c542","#5fd35f","#d9e2f2","#9b6fd4","#e08a3c","#48c2a8"];
+
+/* Draw one building at a point around the loop, oriented to the track
+   and standing just off the outside of it. */
+function atLoop(course, view, frac){
+  const a = course.posAt(frac);
+  const p = proj(view, a);
+  const tx = Math.cos(a.ang), ty = Math.sin(a.ang);
+  const ox = -Math.cos(a.ang+Math.PI/2), oy = -Math.sin(a.ang+Math.PI/2);
+  return (u,v)=>({x:Math.round(p.x+tx*u+ox*v), y:Math.round(p.y+ty*u+oy*v)});
+}
 
 function drawGround(c, course, view){
-  if(!course.stadiumLevel && !course.giftShop) return;
-  const sp = course.posAt(0);
-  const p  = proj(view, sp);
-  const tx = Math.cos(sp.ang),          ty = Math.sin(sp.ang);            // along the track
-  const ox = -Math.cos(sp.ang+Math.PI/2), oy = -Math.sin(sp.ang+Math.PI/2); // away from the loop
+  const infra = course.infra;
+  if(!infra) return;
   const rng = mulberry32(hashStr(course.venue)+7);
-  const px = (u,v)=>({x:Math.round(p.x+tx*u+ox*v), y:Math.round(p.y+ty*u+oy*v)});
+  const put = (px,u,v,col)=>{ const q=px(u,v); c.fillStyle=col; c.fillRect(q.x,q.y,1,1); };
 
-  if(course.stadiumLevel){
-    const s = STAND_SPEC[clamp(course.stadiumLevel,1,3)-1];
-    const front = 13;                                  // clear of the track
-    for(let u=-s.len/2; u<=s.len/2; u++){
-      for(let v=0; v<s.dep; v++){
-        const q = px(u, front+v);
-        let col;
-        if(v < s.rows){
-          // banked rows of spectators facing the track
-          col = rng()<0.55 ? CROWD_COLS[(rng()*CROWD_COLS.length)|0] : "#39465f";
-        }else if(v === s.rows){
-          col = "#39465f";                              // the barrier
-        }else{
-          col = (u%2===0) ? "#39424f" : "#2e3846";      // stand structure
-        }
-        c.fillStyle = col; c.fillRect(q.x, q.y, 1, 1);
+  // ---- stands, spread round the loop from the finish line ----------
+  const stands = Math.min(infra.stand||0, 10);
+  for(let s=0; s<stands; s++){
+    const px = atLoop(course, view, (s*0.107) % 1);
+    const len = 18 + Math.min(s,4)*2, dep = 8, rows = 3;
+    const front = 13;
+    for(let u=-len/2; u<=len/2; u++){
+      for(let v=0; v<dep; v++){
+        put(px,u,front+v, v<rows
+          ? (rng()<0.55 ? CROWD_COLS[(rng()*CROWD_COLS.length)|0] : "#39465f")
+          : (v===rows ? "#39465f" : ((u%2===0)?"#39424f":"#2e3846")));
       }
     }
-    // roof lip along the back
-    for(let u=-s.len/2; u<=s.len/2; u++){
-      const q = px(u, front+s.dep);
-      c.fillStyle="#1d2430"; c.fillRect(q.x,q.y,1,1);
-    }
-    // floodlights on the big one
-    if(course.stadiumLevel===3){
-      [-s.len/2-3, s.len/2+3].forEach(u=>{
-        for(let v=0;v<4;v++){ const q=px(u,front+2+v); c.fillStyle="#5a6a86"; c.fillRect(q.x,q.y,1,1); }
+    for(let u=-len/2; u<=len/2; u++) put(px,u,front+dep,"#1d2430");
+    // floodlights once the ground is getting serious
+    if(stands>=4 && s%2===0){
+      [-len/2-3, len/2+3].forEach(u=>{
+        for(let v=0;v<4;v++) put(px,u,front+2+v,"#5a6a86");
         const q=px(u,front+6); c.fillStyle="#fff8c0"; c.fillRect(q.x-1,q.y-1,3,2);
       });
     }
   }
 
-  if(course.giftShop){
-    // a little hut with a striped awning, just along from the stand
-    const base = (course.stadiumLevel?STAND_SPEC[course.stadiumLevel-1].len/2:0) + 8;
-    for(let u=0; u<7; u++) for(let v=0; v<6; v++){
-      const q = px(base+u, 13+v);
-      c.fillStyle = v<2 ? ((u%2===0)?"#e0574a":"#f5e6c8") : (v===5?"#2e3846":"#6b5340");
-      c.fillRect(q.x,q.y,1,1);
+  // ---- food trucks -------------------------------------------------
+  const trucks = Math.min(infra.foodtruck||0, 8);
+  for(let t=0; t<trucks; t++){
+    const px = atLoop(course, view, (0.055 + t*0.113) % 1);
+    const body = ["#e0574a","#48c2a8","#f5c542","#4f9de0"][t%4];
+    for(let u=0;u<9;u++) for(let v=0;v<6;v++){
+      put(px,u-4,13+v, v<2 ? ((u%2===0)?"#f5e6c8":body)       // awning
+                    : (v===5 ? "#20242e"                       // wheels/shadow
+                    : (u<2 ? "#8a93a5" : body)));              // cab / body
     }
+  }
+
+  // ---- gift shop ---------------------------------------------------
+  const shops = Math.min(infra.giftshop||0, 4);
+  for(let g=0; g<shops; g++){
+    const px = atLoop(course, view, (0.035 + g*0.09) % 1);
+    for(let u=0;u<7;u++) for(let v=0;v<6;v++){
+      put(px,u+6,13+v, v<2 ? ((u%2===0)?"#e0574a":"#f5e6c8") : (v===5?"#2e3846":"#6b5340"));
+    }
+  }
+
+  // ---- big screen : tall panel with a bright face -------------------
+  const screens = Math.min(infra.bigscreen||0, 4);
+  for(let s=0; s<screens; s++){
+    const px = atLoop(course, view, (0.52 + s*0.08) % 1);
+    for(let u=-9;u<=9;u++) for(let v=0;v<11;v++){
+      let col;
+      if(v<2) col = "#20242e";                                  // legs/base
+      else if(v>=9) col = "#1d2430";                            // top housing
+      else col = (rng()<0.12) ? "#8fd0ff" : "#2a4a6a";          // the picture
+      put(px,u,15+v,col);
+    }
+    for(let u=-9;u<=9;u++) put(px,u,15+11,"#39465f");
+  }
+
+  // ---- live band : a stage with a couple of figures ------------------
+  const bands = Math.min(infra.band||0, 4);
+  for(let b=0; b<bands; b++){
+    const px = atLoop(course, view, (0.70 + b*0.06) % 1);
+    for(let u=-7;u<=7;u++) for(let v=0;v<7;v++){
+      put(px,u,14+v, v<1 ? "#7a4b8f" : (v>=6 ? "#20242e" : "#5a3a6b"));
+    }
+    [-4,0,4].forEach((u,i)=>{                                   // the band
+      put(px,u,14+3,"#eccfa4"); put(px,u,14+4,CROWD_COLS[i%CROWD_COLS.length]);
+    });
+  }
+
+  // ---- camera crew : a tower with a rig on top ----------------------
+  const cams = Math.min(infra.camera||0, 4);
+  for(let m=0; m<cams; m++){
+    const px = atLoop(course, view, (0.34 + m*0.07) % 1);
+    for(let v=0;v<9;v++){ put(px,-1,14+v,"#5a6a86"); put(px,1,14+v,"#5a6a86"); }
+    for(let u=-3;u<=3;u++) for(let v=0;v<4;v++) put(px,u,23+v,"#39424f");
+    put(px,3,24,"#20242e"); put(px,4,24,"#20242e");             // the lens
+    put(px,0,26,"#e0574a");                                     // tally light
   }
 }
 
@@ -1538,7 +1620,7 @@ function drawCoursePreview(canvas, course){
    SECTION 6 : GAME STATE
    ================================================================ */
 const SAVE_KEY = "xcmanager_save_v1";
-const SAVE_VERSION = 3;
+const SAVE_VERSION = 4;
 
 let state = null;
 let liveRace = null;       // the running race object (never saved)
@@ -1561,8 +1643,9 @@ function newGame(clubName){
     season:1, week:0, tier:0,
     runners,
     order: runners.map(r=>r.id),
-    plots: PLOTS.filter(p=>p.start).map(p=>p.id),
-    buildings: [],
+    plots: PLOTS.reduce((o,p)=>{ o[p.id] = p.start?1:0; return o; },{}),
+    buildings: {},
+    builtAt: {},
     inventory,
     slots: TRAINING_SLOTS,
     rivals: [],
@@ -1625,39 +1708,98 @@ function shoeFor(runner){
   const inv = state.inventory.find(i=>i.uid===runner.shoeUid);
   return inv ? SHOES[inv.shoe] : SHOES.trainers;
 }
+/* plots are stackable now: every extra piece of the same ground
+   deepens the bonus and puts more of it into your home course */
+const plotLevel = id => (state.plots && state.plots[id]) || 0;
+const facilityBonusFor = lvl => FACILITY_STEPS[Math.min(lvl, FACILITY_STEPS.length-1)];
+/* a deeper facility trains the squad harder */
+function trainQuality(stat){
+  const p = PLOT_BY_STAT[stat];
+  const lvl = p ? plotLevel(p.id) : 0;
+  return 1 + TRAIN_QUALITY*Math.max(0, lvl-1);
+}
+function plotCost(id){
+  const p = PLOTS.find(x=>x.id===id);
+  if(!p) return Infinity;
+  const lvl = plotLevel(id);
+  const base = p.cost || 600;               // the two you start with are free
+  return Math.round(base * Math.pow(PLOT_GROWTH, lvl));
+}
 function facilityBonuses(atHome){
   const f={};
   const mult = atHome ? HOME_FACILITY_MULT : 1;
-  state.plots.forEach(id=>{
-    const p = PLOTS.find(x=>x.id===id);
-    if(p) f[p.stat]=(f[p.stat]||0)+FACILITY_BONUS*mult;
+  PLOTS.forEach(p=>{
+    const lvl = plotLevel(p.id);
+    if(lvl) f[p.stat] = (f[p.stat]||0) + facilityBonusFor(lvl)*mult;
   });
   return f;
 }
 /* ---- the ground you own ---------------------------------------- */
-const hasBuilding = id => (state.buildings||[]).includes(id);
-function bestStadium(){
-  let best=null;
-  STADIUMS.forEach(s=>{ if(hasBuilding(s.id) && (!best || s.level>best.level)) best=s; });
-  return best;
+const infraCount = id => (state.buildings && state.buildings[id]) || 0;
+const standCount = () => infraCount("stand");
+/* what the next one of something costs - they get dearer each time */
+function infraCost(id){
+  const it = INFRA_BY_ID[id];
+  if(!it) return Infinity;
+  return Math.round(it.base * Math.pow(it.growth, infraCount(id)));
 }
-/* How much better your runners are today. Both boosts only apply on
-   your own ground, and they lift attributes rather than raw speed. */
+const infraMaxed = id => infraCount(id) >= (INFRA_BY_ID[id]||{max:0}).max;
+
+/* How much better your runners are today. Only ever applies on your
+   own ground, and it lifts attributes rather than raw speed. */
 function homeBoost(atHome){
   if(!atHome) return 1;
-  return (1+HOME_BOOST) * (bestStadium() ? 1+STADIUM_BOOST : 1);
+  return (1+HOME_BOOST) * (1 + STAND_BOOST*standCount());
 }
-/* gate money, only ever taken on home race day */
-function gateReceipts(){
-  const st = bestStadium();
-  if(!st) return 0;
-  return Math.round(st.gate * (1 + state.tier*0.55));
+
+/* how many seasons you have had a thing, for the slow earners */
+function seasonsOwned(id){
+  const at = (state.builtAt||{})[id];
+  return at===undefined ? 0 : Math.max(0, state.season - at);
 }
-/* the gift shop ticks over every week, and cleans up on home race day */
-function giftShopIncome(atHome){
-  if(!hasBuilding(GIFT_SHOP.id)) return 0;
-  const base = GIFT_SHOP.weekly * (1 + state.tier*0.45);
-  return Math.round(base * (atHome ? GIFT_HOME_MULT : 1));
+
+/* Everything the ground earns on a race week. Ticket money and pitch
+   fees vary every time, so this is rolled fresh on each race day. */
+function raceDayIncome(atHome){
+  const tierMul = 1 + state.tier*0.55;
+  const bandUp  = 1 + (INFRA_BY_ID.band.gateUp * infraCount("band"));
+  const roll = r => r[0] + Math.random()*(r[1]-r[0]);
+  const out = {tickets:0, food:0, shop:0, band:0, social:0, screen:0, tv:0, total:0};
+
+  if(atHome && standCount()){
+    let t=0;
+    for(let i=0;i<standCount();i++) t += roll(INFRA_BY_ID.stand.ticket);
+    out.tickets = Math.round(t * tierMul * bandUp);
+  }
+  const weekly = (id, key)=>{
+    const it = INFRA_BY_ID[id], n = infraCount(id);
+    if(!n || !it.weekly) return;
+    let v = 0;
+    for(let i=0;i<n;i++) v += roll(it.weekly);
+    v *= (1 + state.tier*(it.tierScale||0));
+    if(it.homeMult && atHome) v *= it.homeMult;
+    if(it.grows) v *= (1 + it.grows*seasonsOwned(id));
+    out[key] = Math.round(v);
+  };
+  weekly("foodtruck","food");
+  weekly("giftshop","shop");
+  weekly("band","band");
+  weekly("social","social");
+  weekly("bigscreen","screen");
+
+  const cams = infraCount("camera");
+  if(cams){
+    let v=0;
+    for(let i=0;i<cams;i++) v += roll(INFRA_BY_ID.camera.tv);
+    out.tv = Math.round(v * (1 + state.tier*INFRA_BY_ID.camera.tierScale));
+  }
+  out.total = out.tickets+out.food+out.shop+out.band+out.social+out.screen+out.tv;
+  return out;
+}
+/* a typical race-day take, for showing in the shop */
+function expectedIncome(atHome){
+  let t=0; for(let i=0;i<9;i++) t += raceDayIncome(atHome).total;
+  return Math.round(t/9);
 }
 
 /* At home you are racing on the exact ground you train on, so every
@@ -1665,9 +1807,7 @@ function giftShopIncome(atHome){
 function playerCtx(atHome){
   return {shoeFor, facility:facilityBonuses(atHome), boost:homeBoost(atHome)};
 }
-const ownsPlotFor = stat => state.plots.some(id=>{
-  const p=PLOTS.find(x=>x.id===id); return p && p.stat===stat;
-});
+const ownsPlotFor = stat => PLOTS.some(p=>p.stat===stat && plotLevel(p.id)>0);
 const orderedRunners = ()=>state.order.map(id=>state.runners.find(r=>r.id===id)).filter(Boolean);
 const teamAverage = ()=>{
   let t=0;
@@ -1685,9 +1825,10 @@ function applyTraining(key){
   if(state.slots<=0 || !ownsPlotFor(key)) return null;
   state.slots--;
   let total=0;
+  const quality = trainQuality(key);   // a bigger facility trains harder
   const rows = state.runners.map(r=>{
     const before = r.stats[key];
-    const g = Math.max(0.15, 4.2*(1-before/100)*(0.72+Math.random()*0.56));
+    const g = Math.max(0.15, 4.2*quality*(1-before/100)*(0.72+Math.random()*0.56));
     r.stats[key] = clamp(before+g,1,99);
     total += g;
     return {id:r.id, name:r.name, before, after:r.stats[key], gain:r.stats[key]-before};
@@ -1726,21 +1867,24 @@ function finishTrainingSession(){
 
 function buyPlot(id){
   const p = PLOTS.find(x=>x.id===id);
-  if(!p || state.plots.includes(id) || state.money<p.cost) return;
-  state.money-=p.cost;
-  state.plots.push(id);
+  if(!p) return;
+  const cost = plotCost(id);
+  if(plotLevel(id)>=PLOT_MAX_LEVEL || state.money<cost) return;
+  state.money -= cost;
+  state.plots[id] = plotLevel(id)+1;
   save(); render();
 }
 
 function buyBuilding(id){
-  const item = STADIUMS.find(s=>s.id===id) || (id===GIFT_SHOP.id ? GIFT_SHOP : null);
-  if(!item || hasBuilding(id) || state.money<item.cost) return;
-  // no point owning a smaller stand than the one you already have
-  const st = bestStadium();
-  if(item.level && st && st.level>=item.level) return;
-  state.money -= item.cost;
-  state.buildings = state.buildings || [];
-  state.buildings.push(id);
+  const item = INFRA_BY_ID[id];
+  if(!item || infraMaxed(id)) return;
+  const cost = infraCost(id);
+  if(state.money < cost) return;
+  state.money -= cost;
+  state.buildings = state.buildings || {};
+  state.buildings[id] = infraCount(id)+1;
+  state.builtAt = state.builtAt || {};
+  if(state.builtAt[id]===undefined) state.builtAt[id] = state.season;
   save(); render();
 }
 
@@ -1849,8 +1993,9 @@ function venueForFixture(fx){
 function currentCourse(){
   // buying terrain or building a stand changes your home course, so both
   // count towards the cache key or you would not see what you just bought
-  const plotCount = state.plots.length;
-  const buildCount = (state.buildings||[]).length;
+  const sumCounts = o => Object.keys(o||{}).reduce((a,k)=>a+(o[k]||0),0);
+  const plotCount = sumCounts(state.plots);
+  const buildCount = sumCounts(state.buildings);
   if(liveCourse && liveCourse._week===state.week && liveCourse._season===state.season
      && liveCourse._plots===plotCount && liveCourse._builds===buildCount) return liveCourse;
   const fx = state.fixtures[state.week];
@@ -1920,9 +2065,8 @@ function finishRace(){
   const tierMul = TIERS[state.tier].prize;
   const prize = Math.round(RACE_PRIZE[place-1]*tierMul);
   const atHome = !!R.course.isHome;
-  const gate = atHome ? gateReceipts() : 0;         // only when you host
-  const shop = giftShopIncome(atHome);
-  state.money += prize + gate + shop;
+  const income = raceDayIncome(atHome);             // rolled fresh every race
+  state.money += prize + income.total;
 
   st.forEach((tm,i)=>{
     const rec = state.table[tm.club.id];
@@ -1939,8 +2083,8 @@ function finishRace(){
     venue: R.course.venue,
     lengthM: R.course.lengthM,
     week: state.week, season: state.season, tier: state.tier,
-    place, prize, gate, shop, atHome,
-    stadium: bestStadium() ? bestStadium().name : null,
+    place, prize, atHome, income,
+    stands: standCount(),
     boostPct: atHome ? Math.round((homeBoost(true)-1)*100) : 0,
     points: POINTS[place-1]||0,
     winTime: st[0].finishTime,
@@ -1965,7 +2109,7 @@ function finishRace(){
     })),
   };
   const fx = state.fixtures[state.week];
-  if(fx) fx.result = {place, points:state.lastResult.points, prize, income:prize+gate+shop};
+  if(fx) fx.result = {place, points:state.lastResult.points, prize, income:prize+income.total};
 
   state.raceState="done";
   save(); render();
@@ -2094,6 +2238,29 @@ function migrateSave(){
     // v2 predates stands, the gift shop and race tactics
     state.buildings = state.buildings || [];
     state.runners.forEach(r=>{ if(!r.tactic) r.tactic = DEFAULT_TACTIC; });
+  }
+  if(state.v < 4){
+    // v3 kept plots and buildings as one-off lists; they stack now, so
+    // turn each list into counts and map the old stand tiers onto stands
+    if(Array.isArray(state.plots)){
+      const owned = state.plots;
+      state.plots = PLOTS.reduce((o,p)=>{ o[p.id] = owned.includes(p.id)?1:0; return o; },{});
+    }
+    if(Array.isArray(state.buildings)){
+      const old = state.buildings;
+      const b = {};
+      // clubhouse/grandstand/main stadium all become plain stands
+      const stands = (old.includes("clubhouse")?1:0)+(old.includes("grandstand")?2:0)
+                   + (old.includes("mainstand")?3:0);
+      if(stands) b.stand = stands;
+      if(old.includes("giftshop")) b.giftshop = 1;
+      state.buildings = b;
+    }
+    state.buildings = state.buildings || {};
+    state.builtAt = state.builtAt || {};
+    Object.keys(state.buildings).forEach(id=>{
+      if(state.builtAt[id]===undefined) state.builtAt[id] = state.season;
+    });
   }
   state.v = SAVE_VERSION;
   save();
@@ -2356,18 +2523,30 @@ function screenTrainSession(){
 
 /* ---- SHOP ------------------------------------------------------ */
 function screenShop(){
-  const plots = PLOTS.filter(p=>!p.start).map(p=>{
-    const owned = state.plots.includes(p.id);
-    const afford = state.money>=p.cost;
-    return `<div class="card ${owned?"owned":""}">
+  const plots = PLOTS.map(p=>{
+    const lvl = plotLevel(p.id);
+    const cost = plotCost(p.id);
+    const maxed = lvl>=PLOT_MAX_LEVEL;
+    const afford = state.money>=cost;
+    const terr = PLOT_TERRAIN[p.stat];
+    return `<div class="card ${lvl?"owned":""}">
       <div class="row spread">
         <span class="title">${p.name}</span>
-        <span class="price">${owned?"OWNED":money(p.cost)}</span>
+        <span class="price">${maxed?"MAXED":money(cost)}</span>
       </div>
       <div class="muted small">${esc(p.desc)}</div>
-      <div><span class="tag good">Unlocks ${STAT_BY_KEY[p.stat].name} training</span>
-           <span class="tag good">+${FACILITY_BONUS} ${STAT_BY_KEY[p.stat].short}</span></div>
-      ${owned?"":`<button data-act="buyplot" data-arg="${p.id}" ${afford?"":"disabled"}>Buy</button>`}
+      <div>
+        <span class="tag ${lvl?"good":""}">${lvl?"Unlocked":"Unlocks"} ${STAT_BY_KEY[p.stat].name} training</span>
+        <span class="tag good">+${facilityBonusFor(lvl+1).toFixed(1).replace(/\.0$/,"")} ${STAT_BY_KEY[p.stat].short} at ${lvl+1} owned</span>
+        <span class="tag good">+${Math.round(TRAIN_QUALITY*100)}% training per extra</span>
+        ${terr?`<span class="tag">more ${TERRAIN[terr].name.toLowerCase()} at home</span>`:""}
+      </div>
+      <div class="row spread">
+        <span class="muted small">Owned: <b>${lvl}</b>/${PLOT_MAX_LEVEL}
+          ${lvl?`&middot; <span class="up">+${facilityBonusFor(lvl)} ${STAT_BY_KEY[p.stat].short}, sessions x${trainQuality(p.stat).toFixed(2)}</span>`:""}</span>
+        ${maxed?"":`<button data-act="buyplot" data-arg="${p.id}" ${afford?"":"disabled"}>
+          ${lvl?"Buy another":"Buy"}</button>`}
+      </div>
     </div>`;
   }).join("");
 
@@ -2390,50 +2569,64 @@ function screenShop(){
   }).join("");
 
   const spare = state.inventory.filter(i=>!i.wornBy);
-  const st = bestStadium();
-  const grounds = STADIUMS.map(s=>{
-    const owned = hasBuilding(s.id);
-    const outgrown = st && st.level>=s.level && !owned;
-    const afford = state.money>=s.cost;
-    const gateAt = Math.round(s.gate*(1+state.tier*0.55));
-    return `<div class="card ${owned?"owned":""} ${outgrown?"locked":""}">
+  const tierMul = 1 + state.tier*0.55;
+  const grounds = INFRA.map(it=>{
+    const n = infraCount(it.id);
+    const cost = infraCost(it.id);
+    const maxed = infraMaxed(it.id);
+    const afford = state.money>=cost;
+    const tags = [];
+    if(it.boost) tags.push(`<span class="tag good">+${Math.round(it.boost*100)}% at home each</span>`);
+    if(it.ticket) tags.push(`<span class="tag good">${money(Math.round(it.ticket[0]*tierMul))}&ndash;${money(Math.round(it.ticket[1]*tierMul))} tickets per home race, each</span>`);
+    if(it.weekly){
+      const lo=Math.round(it.weekly[0]*(1+state.tier*(it.tierScale||0)));
+      const hi=Math.round(it.weekly[1]*(1+state.tier*(it.tierScale||0)));
+      tags.push(`<span class="tag good">${money(lo)}&ndash;${money(hi)} every race week, each</span>`);
+      if(it.homeMult) tags.push(`<span class="tag good">x${it.homeMult} at home</span>`);
+      if(it.grows) tags.push(`<span class="tag">+${Math.round(it.grows*100)}% per season owned</span>`);
+    }
+    if(it.tv){
+      const lo=Math.round(it.tv[0]*(1+state.tier*it.tierScale));
+      const hi=Math.round(it.tv[1]*(1+state.tier*it.tierScale));
+      tags.push(`<span class="tag good">${money(lo)}&ndash;${money(hi)} per race in this league, each</span>`);
+      tags.push(`<span class="tag">pays far more the higher you climb</span>`);
+    }
+    if(it.gateUp) tags.push(`<span class="tag good">+${Math.round(it.gateUp*100)}% ticket sales each</span>`);
+    return `<div class="card ${n?"owned":""}">
       <div class="row spread">
-        <span class="title">${s.name}</span>
-        <span class="price">${owned?"BUILT":money(s.cost)}</span>
+        <span class="title">${it.name}</span>
+        <span class="price">${maxed?"MAXED":money(cost)}</span>
       </div>
-      <div class="muted small">${esc(s.desc)}</div>
-      <div>
-        <span class="tag good">+${Math.round(STADIUM_BOOST*100)}% at home</span>
-        <span class="tag good">${money(gateAt)} gate per home race</span>
+      <div class="muted small">${esc(it.desc)}</div>
+      <div>${tags.join(" ")}</div>
+      <div class="row spread">
+        <span class="muted small">Built: <b>${n}</b>/${it.max}</span>
+        ${maxed?"":`<button data-act="buybuilding" data-arg="${it.id}" ${afford?"":"disabled"}>
+          ${n?"Build another":"Build"}</button>`}
       </div>
-      ${owned?"":(outgrown
-        ? `<div class="tag">You already have a bigger stand</div>`
-        : `<button data-act="buybuilding" data-arg="${s.id}" ${afford?"":"disabled"}>Build</button>`)}
     </div>`;
   }).join("");
 
-  const shopOwned = hasBuilding(GIFT_SHOP.id);
-  const giftCard = `<div class="card ${shopOwned?"owned":""}">
-      <div class="row spread">
-        <span class="title">${GIFT_SHOP.name}</span>
-        <span class="price">${shopOwned?"BUILT":money(GIFT_SHOP.cost)}</span>
-      </div>
-      <div class="muted small">${esc(GIFT_SHOP.desc)}</div>
-      <div>
-        <span class="tag good">${money(Math.round(GIFT_SHOP.weekly*(1+state.tier*0.45)))} every race week</span>
-        <span class="tag good">x${GIFT_HOME_MULT} at home</span>
-      </div>
-      ${shopOwned?"":`<button data-act="buybuilding" data-arg="${GIFT_SHOP.id}" ${state.money>=GIFT_SHOP.cost?"":"disabled"}>Build</button>`}
-    </div>`;
-
   return `
   <div class="panel">
-    <div class="row spread"><h2>Your Ground</h2><span class="chip money">Cash <b>${money(state.money)}</b></span></div>
-    <p class="muted small">You race at home once a season. A stand puts a crowd behind your runners
-      &mdash; worth <b>+${Math.round(STADIUM_BOOST*100)}%</b> on their attributes on top of the
-      <b>+${Math.round(HOME_BOOST*100)}%</b> you already get for being at home &mdash; and takes money
-      on the gate. Both only count on your own ground.</p>
-    <div class="grid cols3">${grounds}${giftCard}</div>
+    <div class="row spread">
+      <h2>Your Ground</h2>
+      <div class="row">
+        <span class="chip">Home boost <b>+${Math.round((homeBoost(true)-1)*100)}%</b></span>
+        <span class="chip">Stands <b>${standCount()}</b></span>
+        <span class="chip money">Cash <b>${money(state.money)}</b></span>
+      </div>
+    </div>
+    <p class="muted small">Build it as big as you like &mdash; everything here can be bought again and
+      again, and each one costs more than the last. Every stand adds
+      <b>+${Math.round(STAND_BOOST*100)}%</b> to your runners at home, on top of the
+      <b>+${Math.round(HOME_BOOST*100)}%</b> you get for being on your own ground. Ticket money and
+      pitch fees vary every race day.</p>
+    <div class="row" style="margin-bottom:8px">
+      <span class="chip">Typical home race day <b class="up">${money(expectedIncome(true))}</b></span>
+      <span class="chip">Typical away race day <b class="up">${money(expectedIncome(false))}</b></span>
+    </div>
+    <div class="grid cols3">${grounds}</div>
   </div>
   <div class="panel">
     <div class="row spread"><h2>Terrain &amp; Facilities</h2><span class="chip money">Cash <b>${money(state.money)}</b></span></div>
@@ -2543,9 +2736,10 @@ function screenRacePreview(){
     ? `<div class="banner good">Home fixture &mdash; every piece of terrain you have bought is built
         into this course, your facility bonuses count double, and your squad runs
         <b>+${Math.round((homeBoost(true)-1)*100)}% stronger</b> today${
-          bestStadium()?` with the crowd in the ${esc(bestStadium().name)} behind them`:""}.
-        ${gateReceipts()?`Gate receipts of <b>${money(gateReceipts())}</b> are yours.`
-                        :`Build a stand on the Shop screen to take money on the gate.`}</div>`
+          standCount()?` with a crowd in ${standCount()} stand${standCount()===1?"":"s"} behind them`:""}.
+        ${standCount()?`Ticket money is yours today &mdash; a typical home race day takes
+            <b>${money(expectedIncome(true))}</b>.`
+          :`Build a stand on the Shop screen to take money on the gate.`}</div>`
     : `<div class="banner">Away at ${esc(course.hostName)}. Their ground, their kind of course.</div>`;
 
   return `
@@ -2688,9 +2882,22 @@ function screenResults(){
       <h3 style="margin-top:10px">Takings</h3>
       <table>
         <tr><td>Prize money (${ordinal(res.place)})</td><td class="num">${money(res.prize)}</td></tr>
-        ${res.gate?`<tr><td>Gate receipts &mdash; ${esc(res.stadium)}</td><td class="num up">${money(res.gate)}</td></tr>`:""}
-        ${res.shop?`<tr><td>Gift shop${res.atHome?" (home race day)":""}</td><td class="num up">${money(res.shop)}</td></tr>`:""}
-        <tr><th>Total</th><th class="num">${money(res.prize+(res.gate||0)+(res.shop||0))}</th></tr>
+        ${(()=>{
+          const inc = res.income || {};
+          const lines = [
+            ["tickets", `Ticket sales &mdash; ${res.stands||0} stand${res.stands===1?"":"s"}`],
+            ["tv",      "TV rights"],
+            ["social",  "Social media"],
+            ["shop",    "Gift shop"],
+            ["food",    "Food truck pitches"],
+            ["screen",  "Big screen advertising"],
+            ["band",    "Live band"],
+          ];
+          return lines.filter(l=>inc[l[0]]).map(l=>
+            `<tr><td>${l[1]}${res.atHome&&(l[0]==="tickets"||l[0]==="food"||l[0]==="shop")?" (home)":""}</td>
+             <td class="num up">${money(inc[l[0]])}</td></tr>`).join("");
+        })()}
+        <tr><th>Total</th><th class="num">${money(res.prize+((res.income&&res.income.total)||0))}</th></tr>
       </table>
       ${res.atHome&&res.boostPct?`<p class="small up">Home advantage on the day: +${res.boostPct}% on your runners' attributes.</p>`:""}
     </div>
@@ -2859,7 +3066,8 @@ window.XCM = {
   aiOrder, orderedRunners, playerCtx, save, load, SQUAD_SIZE, STAT_KEYS,
   autoPlayRace, autoOrder, autoTactics, sortedTable, ownsPlotFor, PLOTS, PLOT_BY_STAT, SHOES,
   TACTICS, rollExecution, tacticProfile, stepRace, setTactic, setAllTactics,
-  STADIUMS, GIFT_SHOP, buyBuilding, bestStadium, homeBoost, gateReceipts, giftShopIncome,
+  INFRA, INFRA_BY_ID, buyBuilding, homeBoost, raceDayIncome, expectedIncome,
+  infraCount, infraCost, standCount, plotLevel, plotCost, PLOT_MAX_LEVEL, STAND_BOOST,
   teamAverage, startNextSeason, TIERS_LEN:TIERS.length, WEEKS_PER_SEASON,
 };
 /* === END OF PART 3 === */

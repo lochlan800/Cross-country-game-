@@ -97,31 +97,48 @@ easy to win but pays badly.
 You spend it on:
 
 - **Terrain** — a mud pit, a hill circuit, a long grass meadow, an exposed ridge and so on. Buying a
-  piece of terrain is what *unlocks training* for that attribute, and gives a small permanent bonus
-  straight away. You start with only a cinder track and a fitness trail, so speed and fitness are the
-  only things you can train until you start buying ground.
+  piece of terrain is what *unlocks training* for that attribute. **Buy the same ground again** and
+  you get more of it in your home course and better sessions on it (+14% per extra piece); the flat
+  attribute bonus goes up too, but with sharp diminishing returns so stacking terrain can't simply
+  buy you away wins.
 - **Shoes** — mud claws, fell shoes, grass spikes, carbon racers. Each pair has trade-offs (carbon
   racers are quick but hopeless in mud). Pairs go into the kit bag and you assign them per runner.
-- **Your ground** — a Clubhouse & Terrace, a Grandstand or a full Main Stadium. A stand puts a crowd
-  behind your runners and takes money on the gate, and the takings grow with the league you are in.
-- **A club gift shop** — vests, bobble hats and mugs. It ticks over every race week and does three
-  times the trade on home race day.
+
+### Building the ground
+
+Everything on the ground can be bought **over and over** — each one costs more than the last, and the
+point is to keep making the place bigger.
+
+| | What it does |
+|---|---|
+| **Grandstand** | +2% to your runners at home *each*, and sells tickets — the takings vary every race day |
+| **Food Truck Pitch** | They pay you for the pitch. A bit every race week, treble on home race day |
+| **Club Gift Shop** | Ticks over all week, roaring trade at home |
+| **Live Band** | +18% ticket sales each — people come for the day out, not just the running |
+| **Social Media Team** | Mid-priced and earns very well every week |
+| **Big Screen** | Slow to pay for itself, but worth **+40% more every season** you own it |
+| **Camera Crew & Rig** | Brutally expensive, and poor value in the village league — but TV money climbs steeply with your division. About £1,400 a season at the bottom, nearly £10,000 at the top |
+
+Ticket money and pitch fees are rolled fresh every race day, so no two are the same. Everything you
+build appears on your home course: stands ring the loop with a crowd in them, food trucks and the
+gift shop line the finishing straight, big screens and camera towers go up around it.
 
 ### Home advantage
 
 You race at home once a season, and it is worth turning up for:
 
 - **+8%** on your runners' attributes simply for being on your own ground
-- **+8%** more if you have a stand, with the crowd behind them
+- **+2% per stand** you have built, with the crowd behind them
 - your facility bonuses count double
 - the course is the one built from the terrain you bought, which is the ground you train on
 - gate receipts and a bumper day in the gift shop
 
 Both percentages lift your runners' *attributes*, not their raw speed — the whole speed attribute,
 0 to 100, is only worth a 16% swing, so a flat 8% on speed would decide the race on its own. Even
-applied to attributes it is a big edge: an evenly matched squad wins about 2% of its away races and
-over 80% of its home ones. The constants are `HOME_BOOST` and `STADIUM_BOOST` near the top of the
-`DATA` section if you want a tighter contest.
+applied to attributes it is a big edge, and it grows every time you build another stand: a developed
+ground makes the home fixture close to a certainty. That is deliberate — it is the race you build
+towards all season. The constants are `HOME_BOOST` and `STAND_BOOST` near the top of the `DATA`
+section if you want a tighter contest.
 
 **Training** is three sessions a week, and each session trains the **whole squad** in one attribute.
 Gains shrink as an attribute approaches 100, so you can't just max everything — your weakest runners
