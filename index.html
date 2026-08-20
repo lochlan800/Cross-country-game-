@@ -406,7 +406,10 @@ const PLOT_MAX_LEVEL = 5;      // how many times you can buy the same ground
    facility: more of that ground in your home course, and better
    training on it.                                                    */
 const FACILITY_STEPS = [0, 3, 4.5, 5.5, 6.3, 7.0];
-const TRAIN_QUALITY  = 0.14;   // per extra level, how much better sessions are
+/* Each extra piece of the same ground makes sessions on it markedly
+   better - a fully built facility trains that attribute twice as fast
+   as a bare one. This is the real reason to keep buying terrain.   */
+const TRAIN_QUALITY  = 0.25;   // per extra level, how much better sessions are
 const HOME_FACILITY_MULT = 2;  // ...which counts double on your own ground
 
 /* ---- home advantage --------------------------------------------
@@ -1566,6 +1569,7 @@ const TrainView = {
     this.baked=bakeCourse(course,this.view);
     this.label=STAT_BY_KEY[statKey].name.toUpperCase()+" SESSION";
     this.statKey=statKey;
+    this.quality=trainQuality(statKey);
     this.colour=colour;
     this.t=0;
     // stronger runners lap quicker, so the group strings out naturally
@@ -1625,8 +1629,8 @@ const TrainView = {
     drawHeroRunner(c, CW/2, 172, ((t*7)|0)&3, this.colour, 7);
 
     // where they are working, and the countdown to setting off
-    const gr = this.course.venue;
-    drawText(c,gr,(CW-textW(gr))/2,CH-41,"#8fa8c9");
+    const gr = this.course.venue + (this.quality>1.01?"  x"+this.quality.toFixed(2):"");
+    drawText(c,gr,(CW-textW(gr))/2,CH-41,this.quality>1.01?"#5fd35f":"#8fa8c9");
     const left = Math.max(0, Math.ceil(INTRO_SECONDS - t));
     const go = left>0 ? String(left) : "GO";
     if(left>0 || ((t*6)|0)%2===0)
@@ -2050,9 +2054,9 @@ function applyTraining(key){
     return {id:r.id, name:r.name, before, after:r.stats[key], gain:r.stats[key]-before};
   });
   const avg = total/state.runners.length;
-  state.trainLog.unshift({stat:key, avg, week:state.week, season:state.season});
+  state.trainLog.unshift({stat:key, avg, week:state.week, season:state.season, quality});
   state.trainLog=state.trainLog.slice(0,12);
-  return {stat:key, rows, avg};
+  return {stat:key, rows, avg, quality};
 }
 
 /* instant version - no animation (used by the headless balance tests) */
@@ -2669,8 +2673,11 @@ function screenTraining(){
   const cards = STATS.map(s=>{
     const owns = ownsPlotFor(s.key);
     const plot = PLOT_BY_STAT[s.key];
+    const lvl = plot ? plotLevel(plot.id) : 0;
+    const q = trainQuality(s.key);
     const avg = state.runners.reduce((a,r)=>a+r.stats[s.key],0)/state.runners.length;
     const can = owns && state.slots>0;
+    const nextQ = 1 + TRAIN_QUALITY*Math.max(0, lvl);   // what one more piece would give
     return `<div class="card ${owns?"":"locked"}">
       <div class="row spread">
         <span class="title">${s.name}</span>
@@ -2678,9 +2685,17 @@ function screenTraining(){
       </div>
       <div>${pips(avg)}</div>
       <div class="muted small">${esc(s.desc)}</div>
-      ${owns
-        ? `<button class="primary" data-act="train" data-arg="${s.key}" ${can?"":"disabled"}>Train Whole Team</button>`
-        : `<div class="tag bad">Locked</div><div class="small muted">Needs the ${esc(plot?plot.name:"facility")} &mdash; ${plot?money(plot.cost):""} in the shop.</div>`}
+      ${owns ? `
+        <div class="row spread">
+          <span class="tag ${q>1.4?"good":""}">Facility x${q.toFixed(2)} training</span>
+          <span class="muted small">${plot?`${lvl}/${PLOT_MAX_LEVEL} built`:""}</span>
+        </div>
+        ${plot && lvl<PLOT_MAX_LEVEL
+          ? `<div class="small muted">Another ${esc(plot.name.toLowerCase())} (${money(plotCost(plot.id))})
+               takes sessions to <span class="up">x${nextQ.toFixed(2)}</span>.</div>`
+          : `<div class="small up">Fully built &mdash; sessions here are as good as they get.</div>`}
+        <button class="primary" data-act="train" data-arg="${s.key}" ${can?"":"disabled"}>Train Whole Team</button>`
+      : `<div class="tag bad">Locked</div><div class="small muted">Needs the ${esc(plot?plot.name:"facility")} &mdash; ${plot?money(plotCost(plot.id)):""} in the shop.</div>`}
     </div>`;
   }).join("");
 
@@ -2932,9 +2947,19 @@ function screenTrainSession(){
   const before = T.result.rows.reduce((a,r)=>a+r.before,0)/T.result.rows.length;
   const after  = T.result.rows.reduce((a,r)=>a+r.after,0)/T.result.rows.length;
 
+  const plot = PLOT_BY_STAT[T.stat];
+  const lvl = plot ? plotLevel(plot.id) : 0;
+  const q = T.result.quality || 1;
   return `
   <div class="banner good">${esc(s.name)} session done &mdash; squad ${before.toFixed(1)}
-    &rarr; ${after.toFixed(1)} (+${T.result.avg.toFixed(1)} average).</div>
+    &rarr; ${after.toFixed(1)} (+${T.result.avg.toFixed(1)} average)${
+      q>1.01?`, with your facility running at <b>x${q.toFixed(2)}</b>`:""}.</div>
+  ${plot && lvl<PLOT_MAX_LEVEL ? `<div class="panel2">
+     <span class="muted small">Your ${esc(plot.name.toLowerCase())} is <b>${lvl}/${PLOT_MAX_LEVEL}</b> built.
+     Another piece (${money(plotCost(plot.id))}) would take sessions here to
+     <span class="up">x${(1+TRAIN_QUALITY*lvl).toFixed(2)}</span> &mdash; that is
+     <span class="up">+${Math.round(((1+TRAIN_QUALITY*lvl)/q-1)*100)}%</span> more from every session.</span>
+   </div>`:""}
   <div class="panel">
     <h2>What the session did</h2>
     <table>

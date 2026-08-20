@@ -97,10 +97,11 @@ easy to win but pays badly.
 You spend it on:
 
 - **Terrain** — a mud pit, a hill circuit, a long grass meadow, an exposed ridge and so on. Buying a
-  piece of terrain is what *unlocks training* for that attribute. **Buy the same ground again** and
-  you get more of it in your home course and better sessions on it (+14% per extra piece); the flat
-  attribute bonus goes up too, but with sharp diminishing returns so stacking terrain can't simply
-  buy you away wins.
+  piece of terrain is what *unlocks training* for that attribute. **Buy the same ground again and
+  every session on it gets better**: +25% per extra piece, so a fully built facility trains that
+  attribute *twice as fast* as a bare one (+2.5 a session at one piece, +5.0 at five). It also puts
+  more of that ground into your home course. The flat attribute bonus creeps up too, but with sharp
+  diminishing returns, so terrain makes your squad *develop* faster rather than simply buying wins.
 - **Shoes** — mud claws, fell shoes, grass spikes, carbon racers. Each pair has trade-offs (carbon
   racers are quick but hopeless in mud). Pairs go into the kit bag and you assign them per runner.
 
