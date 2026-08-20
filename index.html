@@ -493,7 +493,7 @@ const TACTICS = {
     desc:"Start within yourself and wind it up all the way home.",
   },
   inside: {
-    id:"inside", name:"Hold The Inside", short:"INSIDE", stat:"uneven", risk:0.26, drain:1.06, kick:1.00, lane:-0.88,
+    id:"inside", name:"Hold The Inside", short:"INSIDE", stat:"uneven", risk:0.26, drain:1.02, kick:1.00, lane:-0.86,
     effort:()=>1.0,
     desc:"Fight for the shortest line. Quickest route, but you get boxed in.",
   },
@@ -516,6 +516,10 @@ const BLOCK_LANE  = 0.30;   // how close their line has to be to block you
 const BLOCK_COST  = 0.935;  // what being boxed in costs you
 const BLOCK_SWING = 0.85;   // how far you pull out to get round them
 const LANE_CHURN  = 0.60;   // how much worse the churn is on the inside line
+const JOSTLE_GAP  = 11;     // metres either side that counts as alongside
+const JOSTLE_LANE = 0.30;   // ...and how close their line has to be
+const JOSTLE_PUSH = 0.22;   // how hard you lean away from them
+const LANE_MAX    = 1.15;   // how far off the nominal line anyone can get
 
 /* ---- 5x7 bitmap font for the canvas HUD ---------------------- */
 const FONT = {
@@ -873,6 +877,8 @@ function makeRaceRunner(runner, ctx){
     prof:tacticProfile(tac,exec),
     form: 1 + gauss()*0.028,          // how they've turned up on the day
     phase: Math.random()*6.283,
+    weaveF: 0.16 + Math.random()*0.26,   // nobody runs a ruler-straight line,
+    weaveA: 0.12 + Math.random()*0.20,   // and everybody wanders differently
     lost:{},                          // seconds lost, by stat key
     sprintGain:0,
     staminaEnd:100,
@@ -941,19 +947,29 @@ function stepRace(R, dt){
 
     // --- racing line --------------------------------------------
     // Someone just ahead on your line is in your way until you pull out.
-    let blocked = false;
+    let blocked = false, jostle = 0;
+    const myIdx = R.teams.indexOf(tm);
     for(let i=0;i<R.teams.length;i++){
       const o = R.teams[i];
       if(o===tm || o.done) continue;
-      const ahead = o.total - tm.total;
-      if(ahead>0 && ahead<BLOCK_GAP && Math.abs(o.lane-tm.lane)<BLOCK_LANE){ blocked=true; break; }
+      const gap = o.total - tm.total;
+      if(gap>0 && gap<BLOCK_GAP && Math.abs(o.lane-tm.lane)<BLOCK_LANE) blocked = true;
+      // anyone running right alongside gets leaned away from
+      if(Math.abs(gap)<JOSTLE_GAP && Math.abs(o.lane-tm.lane)<JOSTLE_LANE){
+        const diff = tm.lane - o.lane;
+        jostle += (diff===0 ? (myIdx<i?-1:1) : Math.sign(diff)) * JOSTLE_PUSH;
+      }
     }
     tm.blocked = blocked;
     if(blocked) r.boxedFor += dt;
-    let want = r.tactic.lane + Math.sin(R.t*0.23 + r.phase)*0.14;   // nobody runs a ruler line
-    if(blocked) want = clamp(want + BLOCK_SWING, -1, 1);            // swing out to get round
+    let want = r.tactic.lane
+             + Math.sin(R.t*r.weaveF + r.phase)*r.weaveA          // their own wander
+             + clamp(jostle,-0.5,0.5);                            // and the elbows
+    if(blocked) want = clamp(want + BLOCK_SWING, -1, 1);          // swing out to get round
     tm.lane += clamp(want - tm.lane, -LANE_DRIFT*dt, LANE_DRIFT*dt);
-    tm.lane = clamp(tm.lane, -1, 1);
+    // a little headroom past the nominal edges, so a runner committed to
+    // the rail still has room to weave instead of being pinned flat
+    tm.lane = clamp(tm.lane, -LANE_MAX, LANE_MAX);
     const LN = 1 - LANE_GAIN*tm.lane;          // the inside is the shorter way round
     const BK = blocked ? BLOCK_COST : 1;
 
@@ -1239,10 +1255,11 @@ const RaceView = {
         drawRunnerSprite(c, p.x+ (tm.place%2?10:-10), p.y+12, 0, tm.colour, null);
         return;
       }
-      // runners sit on their own racing line, and a tiny per-club offset
-      // keeps two clubs on the same line from drawing on top of each other
-      const nudge = (R.teams.indexOf(tm) - (R.teams.length-1)/2) * 1.15;
-      const lane = tm.lane*LANE_PIXELS + nudge;
+      // Runners sit on their own racing line. The path normal points
+      // INTO the loop, so a negative lane (the inside line) has to be
+      // negated here or the inside tactic draws them out wide.
+      const nudge = (R.teams.indexOf(tm) - (R.teams.length-1)/2) * 0.9;
+      const lane = -(tm.lane*LANE_PIXELS + nudge);
       p.x += Math.cos(a.ang+Math.PI/2)*lane;
       p.y += Math.sin(a.ang+Math.PI/2)*lane;
       const frame = ((tm.total/2.2)|0) & 3;
